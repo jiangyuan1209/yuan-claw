@@ -23,13 +23,18 @@ export function parseCliArgs(argv: string[]): CliArgs {
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
 
-        if (arg === "--session") {
+        if (arg === "--session" || arg === "--session-id") {
             sessionId = argv[++i];
             continue;
         }
 
         if (arg.startsWith("--session=")) {
             sessionId = arg.slice("--session=".length);
+            continue;
+        }
+
+        if (arg.startsWith("--session-id=")) {
+            sessionId = arg.slice("--session-id=".length);
             continue;
         }
 
