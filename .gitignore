@@ -13,8 +13,8 @@ yarn-error.log*
 pnpm-debug.log*
 
 # env files
-.env
-.env.*
+#.env
+#.env.*
 !.env.example
 
 # macOS
@@ -34,3 +34,7 @@ my-agent.config.json
 .tmp/
 temp/
 coverage/
+
+dist
+
+.sessions
