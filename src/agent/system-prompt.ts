@@ -11,9 +11,10 @@ export function buildSystemPrompt(
         params.tools.length > 0
             ? params.tools
                 .map((tool) => {
-                    const schema = tool.inputSchema
-                        ? JSON.stringify(tool.inputSchema, null, 2)
-                        : "{}";
+                    const schema =
+                        tool.inputSchema == null
+                            ? "{}"
+                            : safeDescribeSchema(tool.inputSchema);
 
                     return [
                         `Tool: ${tool.name}`,
@@ -83,4 +84,13 @@ Behavior guidelines:
 Available tools:
 ${toolSection}
 `.trim();
+}
+
+function safeDescribeSchema(schema: unknown): string {
+    try {
+        const json = JSON.stringify(schema, null, 2);
+        return json && json !== "{}" ? json : "[schema available]";
+    } catch {
+        return "[schema available]";
+    }
 }
