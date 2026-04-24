@@ -1,52 +1,50 @@
+import OpenAI from "openai";
 import type { ChatMessage } from "../../memory/types.js";
 
-export type OpenAICompatibleClientOptions = {
-    baseURL: string;
-    apiKey: string;
-    model: string;
-};
-
-export type ModelClient = {
-    generate: (messages: ChatMessage[]) => Promise<string>;
+type CreateOpenAICompatibleClientOptions = {
+    model?: string;
 };
 
 export function createOpenAICompatibleClient(
-    options: OpenAICompatibleClientOptions
-): ModelClient {
+    options: CreateOpenAICompatibleClientOptions = {}
+) {
+    const apiKey = process.env.MODEL_API_KEY ?? process.env.OPENAI_API_KEY;
+    const baseURL = process.env.MODEL_BASE_URL ?? process.env.OPENAI_BASE_URL;
+    const model =
+        options.model ??
+        process.env.MODEL_NAME ??
+        process.env.OPENAI_MODEL ??
+        "gpt-4o-mini";
+
+    if (!apiKey) {
+        throw new Error(
+            "Missing MODEL_API_KEY / OPENAI_API_KEY in environment variables."
+        );
+    }
+
+    const client = new OpenAI({
+        apiKey,
+        baseURL,
+    });
+
     return {
-        async generate(messages: ChatMessage[]) {
-            const response = await fetch(`${options.baseURL}/chat/completions`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${options.apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: options.model,
-                    temperature: 0.2,
-                    response_format: { type: "json_object" },
-                    messages: messages.map((m) => ({
-                        role: m.role === "tool" ? "assistant" : m.role,
-                        content: m.content,
-                    })),
-                }),
+        async generate(messages: ChatMessage[]): Promise<string> {
+            const response = await client.chat.completions.create({
+                model,
+                messages: messages.map((message) => ({
+                    role: message.role === "tool" ? "user" : message.role,
+                    content: message.content,
+                })),
+                temperature: 0,
             });
 
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(
-                    `Model API error: ${response.status} ${response.statusText}\n${text}`
-                );
+            const text = response.choices[0]?.message?.content;
+
+            if (typeof text !== "string" || !text.trim()) {
+                throw new Error("Model returned empty content.");
             }
 
-            const data = await response.json();
-
-            const content = data?.choices?.[0]?.message?.content;
-            if (typeof content !== "string" || !content.trim()) {
-                throw new Error("Model API returned empty content");
-            }
-
-            return content;
+            return text;
         },
     };
 }

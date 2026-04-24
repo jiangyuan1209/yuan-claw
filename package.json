@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "tsx src/cli/main.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/cli/main.js"
+    "start": "node dist/cli/main.js",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
