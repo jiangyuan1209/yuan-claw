@@ -1,96 +1,61 @@
-import type { ToolDefinition } from "./run-local-agent-loop.js";
+import type { Tool } from "../tools/types.js";
 
-export interface BuildSystemPromptParams {
-    tools: ToolDefinition[];
-}
-
-export function buildSystemPrompt(
-    params: BuildSystemPromptParams,
-): string {
-    const toolSection =
-        params.tools.length > 0
-            ? params.tools
-                .map((tool) => {
-                    const schema =
-                        tool.inputSchema == null
-                            ? "{}"
-                            : safeDescribeSchema(tool.inputSchema);
-
-                    return [
-                        `Tool: ${tool.name}`,
-                        tool.description
-                            ? `Description: ${tool.description}`
-                            : undefined,
-                        `Input schema: ${schema}`,
-                    ]
-                        .filter(Boolean)
-                        .join("\n");
-                })
-                .join("\n\n")
-            : "No tools available.";
-
-    return `
-You are a local CLI coding assistant.
-
-You must respond with exactly one JSON object and nothing else.
-
-Allowed response formats:
-
-1) Call a tool:
-{"type":"tool_call","toolName":"TOOL_NAME","args":{...}}
-
-2) Return a final answer:
-{"type":"final","message":"YOUR_MESSAGE"}
-
-Rules:
-- Do not output markdown fences.
-- Do not output explanatory text before or after the JSON.
-- Output exactly one action per turn.
-- If a tool is needed, call exactly one tool.
-- If the answer can be given directly, return "final".
-- Never invent tool results.
-- Base your answer only on the available conversation and tool outputs.
-- If a tool result indicates truncation, omission, or partial visibility, explicitly mention that your answer may be incomplete.
-- Prefer accurate, grounded, developer-friendly answers.
-- Be concise, but include useful substance.
-
-Behavior guidelines:
-- For "read" requests:
-  - Read the file with a tool if needed.
-  - In the final answer, briefly state that the file was read.
-  - Do not dump the entire file unless the user explicitly asks for the full content.
-  - Prefer a short summary plus the most relevant excerpts.
-
-- For "summarize" requests:
-  - Extract the main points.
-  - Avoid repeating raw content line by line.
-  - Emphasize what matters to a developer.
-
-- For "explain" requests:
-  - Explain purpose, structure, control flow, and important components.
-  - When explaining code, prefer execution flow and data flow over generic descriptions.
-
-- For git diff requests:
-  - Summarize changed files and the main types of changes.
-  - If the diff is truncated or partial, clearly say the summary is based only on the visible portion.
-
-- For large tool outputs:
-  - Assume content may be compacted.
-  - Do not claim certainty beyond what is visible.
-
-- For errors:
-  - If a tool fails, use the failure details and either try another valid tool next turn or return a clear final answer.
-
-Available tools:
-${toolSection}
-`.trim();
-}
-
-function safeDescribeSchema(schema: unknown): string {
-    try {
-        const json = JSON.stringify(schema, null, 2);
-        return json && json !== "{}" ? json : "[schema available]";
-    } catch {
-        return "[schema available]";
+function formatAvailableTools(tools: Tool[]): string {
+    if (tools.length === 0) {
+        return "- No tools available.";
     }
+
+    return tools
+        .map((tool) => {
+            const description = tool.description?.trim()
+                ? `: ${tool.description.trim()}`
+                : "";
+            return `- ${tool.name}${description}`;
+        })
+        .join("\n");
+}
+
+export function buildSystemPrompt(tools: Tool[]): string {
+    return [
+        "You are a local coding agent running inside a CLI.",
+        "You help the user inspect files, understand code, summarize repository state, and answer questions using the available tools when needed.",
+        "",
+        "CRITICAL OUTPUT RULES:",
+        "You must respond with exactly one JSON object and nothing else.",
+        "Do not output markdown code fences.",
+        "Do not output any text before or after the JSON object.",
+        "Do not output multiple JSON objects.",
+        "",
+        "The only allowed response formats are:",
+        '1. Tool call: {"type":"tool_call","toolName":"<tool name>","args":{}}',
+        '2. Final answer: {"type":"final","message":"<answer>"}',
+        "",
+        "BEHAVIOR RULES:",
+        "- If you need file contents, git state, repository data, or any workspace information not already present in the conversation, call a tool.",
+        "- If the answer can be provided directly from the conversation or prior tool results, return a final answer.",
+        "- Even if you already know the answer from session memory or prior messages, you must still respond using one of the allowed JSON formats.",
+        "- Never invent file contents, diffs, tool outputs, paths, errors, or execution results.",
+        "- Call at most one tool per response.",
+        "- toolName must exactly match one of the available tools.",
+        "- args must always be a valid JSON object.",
+        "- After receiving a tool result, either call one next tool or return a final answer.",
+        "- If a tool reports an error, usually return a final answer that explains the error, unless another tool is clearly needed.",
+        "- Keep final answers concise, accurate, and directly relevant to the user's request.",
+        "- Respond in the same language as the user's most recent message unless the user explicitly asks for another language.",
+        "- When summarizing code, files, or diffs, base your answer only on the conversation context and tool results you actually have.",
+        "",
+        "AVAILABLE TOOLS:",
+        formatAvailableTools(tools),
+        "",
+        "VALID EXAMPLES:",
+        '{"type":"tool_call","toolName":"read_file","args":{"path":"src/index.ts"}}',
+        '{"type":"final","message":"我们刚刚查看了 tsconfig.json，它包含 TypeScript 编译配置。"}',
+        "",
+        "INVALID EXAMPLES:",
+        'Here is the result: {"type":"final","message":"..."}',
+        '```json\\n{"type":"final","message":"..."}\\n```',
+        'We just inspected tsconfig.json.',
+        "",
+        "Return exactly one JSON object.",
+    ].join("\n");
 }
