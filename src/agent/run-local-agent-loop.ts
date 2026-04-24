@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../memory/types.js";
+import type { AgentEvent, EventBus } from "../events/event-bus.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import {
     prepareMessagesForModel,
@@ -32,15 +33,11 @@ export interface ModelClient {
     generate(messages: ChatMessage[]): Promise<string>;
 }
 
-export interface EventBusLike {
-    emit: (event: any) => void;
-}
-
 export interface RunLocalAgentLoopParams {
     userInput: string;
     modelClient: ModelClient;
     tools: Map<string, ToolDefinition>;
-    eventBus?: EventBusLike;
+    eventBus?: EventBus;
     previousMessages?: ChatMessage[];
     maxSteps?: number;
     onMessagesUpdated?: (messages: ChatMessage[]) => void | Promise<void>;
@@ -65,8 +62,8 @@ export async function runLocalAgentLoop(
         onMessagesUpdated,
     } = params;
 
-    const emit = (event: any) => {
-        eventBus?.emit?.(event);
+    const emit = (event: AgentEvent) => {
+        eventBus?.emit(event);
     };
 
     const toolMap = tools;
@@ -85,16 +82,10 @@ export async function runLocalAgentLoop(
 
     emit({
         type: "run_start",
-        userInput,
-        toolCount: toolMap.size,
+        input: userInput,
     });
 
     for (let step = 1; step <= maxSteps; step++) {
-        emit({
-            type: "step_start",
-            step,
-        });
-
         const modelMessages = prepareMessagesForModel(messages, {
             maxMessages: 24,
             maxTotalChars: 24_000,
@@ -113,8 +104,9 @@ export async function runLocalAgentLoop(
             const message = formatErrorMessage("Model request failed", error);
 
             emit({
-                type: "error",
+                type: "run_error",
                 step,
+                stage: "model_generate",
                 error: message,
             });
 
@@ -131,8 +123,8 @@ export async function runLocalAgentLoop(
 
             emit({
                 type: "run_end",
+                reason: "model_error",
                 step,
-                status: "model_error",
             });
 
             return {
@@ -145,22 +137,24 @@ export async function runLocalAgentLoop(
         emit({
             type: "model_raw",
             step,
-            content: rawModelContent,
+            text: rawModelContent,
         });
 
         const parsed = parseAgentProtocol(rawModelContent);
 
         if (!parsed.ok) {
+            const parseError = parsed.error;
+
+            emit({
+                type: "run_error",
+                step,
+                stage: "protocol_parse",
+                error: `${parseError}. Raw output: ${rawModelContent}`,
+            });
+
             const finalMessage =
                 "我无法正确解析模型输出为协议 JSON。\n\n" +
                 "请重试，或优化 system prompt 以强制输出合法 JSON。";
-
-            emit({
-                type: "warning",
-                step,
-                reason: "invalid_protocol",
-                raw: rawModelContent,
-            });
 
             messages.push({
                 role: "assistant",
@@ -171,8 +165,8 @@ export async function runLocalAgentLoop(
 
             emit({
                 type: "run_end",
+                reason: "invalid_protocol",
                 step,
-                status: "invalid_protocol",
             });
 
             return {
@@ -194,14 +188,13 @@ export async function runLocalAgentLoop(
 
             emit({
                 type: "assistant",
-                step,
                 message: finalMessage,
             });
 
             emit({
                 type: "run_end",
+                reason: "completed",
                 step,
-                status: "completed",
             });
 
             return {
@@ -215,17 +208,15 @@ export async function runLocalAgentLoop(
         const tool = toolMap.get(toolName);
 
         if (!tool) {
-            const toolError = {
-                success: false,
-                error: `Unknown tool: ${toolName}`,
-                availableTools: Array.from(toolMap.keys()),
-            };
+            const errorMessage = `Unknown tool: ${toolName}. Available tools: ${Array.from(
+                toolMap.keys(),
+            ).join(", ")}`;
 
             emit({
-                type: "warning",
-                step,
-                reason: "unknown_tool",
+                type: "tool_error",
                 toolName,
+                error: errorMessage,
+                step,
             });
 
             messages.push({
@@ -235,7 +226,11 @@ export async function runLocalAgentLoop(
 
             messages.push({
                 role: "tool",
-                content: serializeToolMessage(toolError),
+                content: serializeToolMessage({
+                    success: false,
+                    error: errorMessage,
+                    availableTools: Array.from(toolMap.keys()),
+                }),
             });
 
             await persistMessages(messages, onMessagesUpdated);
@@ -244,9 +239,9 @@ export async function runLocalAgentLoop(
 
         emit({
             type: "tool_start",
-            step,
             toolName,
             args,
+            step,
         });
 
         let toolResult: unknown;
@@ -256,28 +251,31 @@ export async function runLocalAgentLoop(
             toolResult = await tool.execute(args);
         } catch (error) {
             toolSuccess = false;
-            toolResult = {
-                success: false,
-                error: formatErrorMessage(
-                    `Tool execution failed for "${toolName}"`,
-                    error,
-                ),
-            };
+
+            const errorMessage = formatErrorMessage(
+                `Tool execution failed for "${toolName}"`,
+                error,
+            );
 
             emit({
-                type: "error",
-                step,
+                type: "tool_error",
                 toolName,
-                error: toolResult,
+                error: errorMessage,
+                step,
             });
+
+            toolResult = {
+                success: false,
+                error: errorMessage,
+            };
         }
 
         emit({
             type: "tool_end",
-            step,
             toolName,
             success: toolSuccess,
             result: toolResult,
+            step,
         });
 
         messages.push({
@@ -313,14 +311,14 @@ export async function runLocalAgentLoop(
     await persistMessages(messages, onMessagesUpdated);
 
     emit({
-        type: "warning",
-        reason: "max_steps_reached",
-        maxSteps,
+        type: "assistant",
+        message: finalMessage,
     });
 
     emit({
         type: "run_end",
-        status: "max_steps_reached",
+        reason: "max_steps_reached",
+        step: maxSteps,
     });
 
     return {
