@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import type { Tool } from "../types";
-import { resolveSafePath } from "../../security/path-guards";
+import type { Tool } from "../types.js";
+import { resolveSafePath } from "../../security/path-guards.js";
 
 const ListFilesInputSchema = z.object({
     path: z.string().default("."),
@@ -21,7 +21,7 @@ export function createListFilesTool(
         name: "list_files",
         description: "List files and directories inside the workspace",
         inputSchema: ListFilesInputSchema,
-        async execute(rawArgs) {
+        async execute(rawArgs: unknown) {
             try {
                 const args = ListFilesInputSchema.parse(rawArgs);
                 const basePath = resolveSafePath(options.workspaceRoot, args.path);

@@ -1,16 +1,16 @@
-import type { Tool } from "./types";
+import type { Tool } from "./types.js";
 
-import { createReadFileTool } from "./file/read-file";
-import { createWriteFileTool } from "./file/write-file";
-import { createListFilesTool } from "./file/list-files";
-import { createGrepTextTool } from "./file/grep-text";
+import { createReadFileTool } from "./file/read-file.js";
+import { createWriteFileTool } from "./file/write-file.js";
+import { createListFilesTool } from "./file/list-files.js";
+import { createGrepTextTool } from "./file/grep-text.js";
 
-import { createShellExecTool } from "./shell/shell-exec";
+import { createShellExecTool } from "./shell/shell-exec.js";
 
-import { createGitStatusTool } from "./git/git-status";
-import { createGitDiffTool } from "./git/git-diff";
+import { createGitStatusTool } from "./git/git-status.js";
+import { createGitDiffTool } from "./git/git-diff.js";
 
-import { createHttpFetchTool } from "./web/http-fetch";
+import { createHttpFetchTool } from "./web/http-fetch.js";
 
 type CreateToolRegistryOptions = {
     workspaceRoot: string;

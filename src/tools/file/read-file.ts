@@ -1,10 +1,11 @@
 import fs from "node:fs/promises";
 import { z } from "zod";
-import type { Tool } from "../types";
-import { resolveSafePath } from "../../security/path-guards";
+import type { Tool } from "../types.js";
+import { resolveSafePath } from "../../security/path-guards.js";
 
 const ReadFileInputSchema = z.object({
     path: z.string().min(1),
+    maxChars: z.number().int().positive().max(50000).default(12000),
 });
 
 type CreateReadFileToolOptions = {
@@ -23,12 +24,16 @@ export function createReadFileTool(
                 const args = ReadFileInputSchema.parse(rawArgs);
                 const fullPath = resolveSafePath(options.workspaceRoot, args.path);
                 const content = await fs.readFile(fullPath, "utf8");
+                const sliced = content.slice(0, args.maxChars);
 
                 return {
                     success: true,
                     output: {
                         path: args.path,
-                        content,
+                        content: sliced,
+                        truncated: content.length > sliced.length,
+                        totalChars: content.length,
+                        returnedChars: sliced.length,
                     },
                 };
             } catch (error) {

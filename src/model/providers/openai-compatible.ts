@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../../memory/types";
+import type { ChatMessage } from "../../memory/types.js";
 
 export type OpenAICompatibleClientOptions = {
     baseURL: string;

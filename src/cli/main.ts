@@ -1,11 +1,12 @@
 import "dotenv/config";
-import { parseCliArgs } from "./parse-args";
-import { resolveWorkspaceRoot } from "../security/path-guards";
-import { createToolRegistry } from "../tools/registry";
-import { SessionStore } from "../memory/session-store";
-import { createConsoleEventBus } from "../events/event-bus";
-import { runLocalAgentLoop } from "../agent/run-local-agent-loop";
-import { createModelClient } from "../model/client";
+import type { ChatMessage } from "../memory/types.js";
+import { parseCliArgs } from "./parse-args.js";
+import { resolveWorkspaceRoot } from "../security/path-guards.js";
+import { createToolRegistry } from "../tools/registry.js";
+import { SessionStore } from "../memory/session-store.js";
+import { createConsoleEventBus } from "../events/event-bus.js";
+import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
+import { createModelClient } from "../model/client.js";
 
 async function main() {
     const args = parseCliArgs(process.argv.slice(2));
@@ -36,7 +37,7 @@ async function main() {
         maxSteps: 10,
         previousMessages: previousSession?.messages ?? [],
         onMessagesUpdated: args.sessionId
-            ? async (messages) => {
+            ? async (messages: ChatMessage[]) => {
                 await sessionStore.save(args.sessionId!, messages);
             }
             : undefined,

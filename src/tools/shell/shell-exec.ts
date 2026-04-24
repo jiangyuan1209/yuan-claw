@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { Tool } from "../types";
-import { validateShellCommand } from "../../security/shell-policy";
+import type { Tool } from "../types.js";
+import { validateShellCommand } from "../../security/shell-policy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,7 +22,7 @@ export function createShellExecTool(
         name: "shell_exec",
         description: "Execute a shell command in the workspace with safety policy",
         inputSchema: ShellExecInputSchema,
-        async execute(rawArgs) {
+        async execute(rawArgs: unknown) {
             try {
                 const args = ShellExecInputSchema.parse(rawArgs);
                 validateShellCommand(args.command);
