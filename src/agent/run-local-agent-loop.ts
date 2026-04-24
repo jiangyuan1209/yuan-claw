@@ -1,18 +1,20 @@
-import type { Tool } from "../tools/types";
-import type { ChatMessage } from "../memory/types";
-import { makeSystemPrompt } from "./prompts";
+import type { Tool } from "../tools/types.js";
+import type { ChatMessage } from "../memory/types.js";
+import type { EventBus } from "../events/event-bus.js";
+import { makeSystemPrompt } from "./prompts.js";
 import {
     AgentResponseSchema,
     normalizeAgentOutput,
     safeJsonParse,
-} from "./protocol";
+} from "./protocol.js";
+import {
+    trimMessages,
+    compactToolResult,
+    compactAssistantToolCall,
+} from "./message-utils.js";
 
 type ModelClient = {
     generate: (messages: ChatMessage[]) => Promise<string>;
-};
-
-type EventBus = {
-    emit: (event: Record<string, unknown>) => void;
 };
 
 type RunLocalAgentLoopParams = {
@@ -36,17 +38,23 @@ export async function runLocalAgentLoop(params: RunLocalAgentLoopParams) {
         onMessagesUpdated,
     } = params;
 
-    const messages: ChatMessage[] = [
+    let messages: ChatMessage[] = trimMessages(
+        [
+            {
+                role: "system",
+                content: makeSystemPrompt(tools),
+            },
+            ...previousMessages.filter((m) => m.role !== "system"),
+            {
+                role: "user",
+                content: userInput,
+            },
+        ],
         {
-            role: "system",
-            content: makeSystemPrompt(tools),
-        },
-        ...previousMessages.filter((m) => m.role !== "system"),
-        {
-            role: "user",
-            content: userInput,
-        },
-    ];
+            maxMessages: 24,
+            maxContentChars: 12000,
+        }
+    );
 
     if (onMessagesUpdated) {
         await onMessagesUpdated(messages);
@@ -91,6 +99,11 @@ export async function runLocalAgentLoop(params: RunLocalAgentLoopParams) {
                 content: action.message,
             });
 
+            messages = trimMessages(messages, {
+                maxMessages: 24,
+                maxContentChars: 12000,
+            });
+
             if (onMessagesUpdated) {
                 await onMessagesUpdated(messages);
             }
@@ -116,16 +129,20 @@ export async function runLocalAgentLoop(params: RunLocalAgentLoopParams) {
 
             messages.push({
                 role: "assistant",
-                content: JSON.stringify(action),
+                content: compactAssistantToolCall(action.toolName, action.args),
             });
 
             messages.push({
                 role: "tool",
-                content: JSON.stringify({
-                    toolName: action.toolName,
+                content: compactToolResult(action.toolName, {
                     success: false,
                     error: errorMessage,
                 }),
+            });
+
+            messages = trimMessages(messages, {
+                maxMessages: 24,
+                maxContentChars: 12000,
             });
 
             if (onMessagesUpdated) {
@@ -169,15 +186,17 @@ export async function runLocalAgentLoop(params: RunLocalAgentLoopParams) {
 
         messages.push({
             role: "assistant",
-            content: JSON.stringify(action),
+            content: compactAssistantToolCall(tool.name, action.args),
         });
 
         messages.push({
             role: "tool",
-            content: JSON.stringify({
-                toolName: tool.name,
-                ...result,
-            }),
+            content: compactToolResult(tool.name, result),
+        });
+
+        messages = trimMessages(messages, {
+            maxMessages: 24,
+            maxContentChars: 12000,
         });
 
         if (onMessagesUpdated) {
@@ -185,9 +204,25 @@ export async function runLocalAgentLoop(params: RunLocalAgentLoopParams) {
         }
     }
 
+    const stopMessage = "已达到最大执行步数限制，任务已停止。";
+
+    messages.push({
+        role: "assistant",
+        content: stopMessage,
+    });
+
+    messages = trimMessages(messages, {
+        maxMessages: 24,
+        maxContentChars: 12000,
+    });
+
+    if (onMessagesUpdated) {
+        await onMessagesUpdated(messages);
+    }
+
     eventBus.emit({
         type: "assistant",
-        message: "已达到最大执行步数限制，任务已停止。",
+        message: stopMessage,
     });
 
     eventBus.emit({

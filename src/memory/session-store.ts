@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { SessionData, ChatMessage } from "./types";
+import type { SessionData, ChatMessage } from "./types.js";
 
 type SessionStoreOptions = {
     baseDir?: string;

@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import type { Tool } from "../types";
-import { resolveSafePath } from "../../security/path-guards";
+import type { Tool } from "../types.js";
+import { resolveSafePath } from "../../security/path-guards.js";
 
 const WriteFileInputSchema = z.object({
     path: z.string().min(1),

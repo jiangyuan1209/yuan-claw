@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { Tool } from "../types";
-import { validateUrlByPolicy } from "../../security/network-policy";
+import type { Tool } from "../types.js";
+import { validateUrlByPolicy } from "../../security/network-policy.js";
 
 const HttpFetchInputSchema = z.object({
     url: z.string().min(1),
@@ -19,7 +19,7 @@ export function createHttpFetchTool(
         name: "http_fetch",
         description: "Fetch a web page or API response over HTTP/HTTPS",
         inputSchema: HttpFetchInputSchema,
-        async execute(rawArgs) {
+        async execute(rawArgs: unknown) {
             try {
                 const args = HttpFetchInputSchema.parse(rawArgs);
                 const url = validateUrlByPolicy(args.url);
@@ -43,6 +43,8 @@ export function createHttpFetchTool(
                         contentType,
                         text: truncatedText,
                         truncated: text.length > truncatedText.length,
+                        totalChars: text.length,
+                        returnedChars: truncatedText.length,
                     },
                 };
             } catch (error) {

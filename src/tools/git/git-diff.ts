@@ -1,13 +1,14 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { Tool } from "../types";
+import type { Tool } from "../types.js";
 
 const execFileAsync = promisify(execFile);
 
 const GitDiffInputSchema = z.object({
     cached: z.boolean().default(false),
     path: z.string().optional(),
+    maxChars: z.number().int().positive().max(50000).default(12000),
 });
 
 type CreateGitDiffToolOptions = {
@@ -21,7 +22,7 @@ export function createGitDiffTool(
         name: "git_diff",
         description: "Get git diff in the workspace",
         inputSchema: GitDiffInputSchema,
-        async execute(rawArgs) {
+        async execute(rawArgs : unknown) {
             try {
                 const args = GitDiffInputSchema.parse(rawArgs);
 
@@ -39,12 +40,17 @@ export function createGitDiffTool(
                     maxBuffer: 1024 * 1024,
                 });
 
+                const diff = stdout.slice(0, args.maxChars);
+
                 return {
                     success: true,
                     output: {
                         cached: args.cached,
                         path: args.path ?? null,
-                        diff: stdout,
+                        diff,
+                        truncated: stdout.length > diff.length,
+                        totalChars: stdout.length,
+                        returnedChars: diff.length,
                         stderr,
                         empty: stdout.trim().length === 0,
                     },

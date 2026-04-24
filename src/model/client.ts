@@ -1,4 +1,4 @@
-import { createOpenAICompatibleClient } from "./providers/openai-compatible";
+import { createOpenAICompatibleClient } from "./providers/openai-compatible.js";
 
 export function createModelClient() {
     const baseURL = process.env.MODEL_BASE_URL;

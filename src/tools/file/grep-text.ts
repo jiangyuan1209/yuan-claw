@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import type { Tool } from "../types";
-import { resolveSafePath } from "../../security/path-guards";
+import type { Tool } from "../types.js";
+import { resolveSafePath } from "../../security/path-guards.js";
 
 const GrepTextInputSchema = z.object({
     query: z.string().min(1),
@@ -22,7 +22,7 @@ export function createGrepTextTool(
         name: "grep_text",
         description: "Search text in files under the workspace",
         inputSchema: GrepTextInputSchema,
-        async execute(rawArgs) {
+        async execute(rawArgs: unknown) {
             try {
                 const args = GrepTextInputSchema.parse(rawArgs);
                 const basePath = resolveSafePath(options.workspaceRoot, args.path);

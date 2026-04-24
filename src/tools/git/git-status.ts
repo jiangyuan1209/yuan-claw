@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { Tool } from "../types";
+import type { Tool } from "../types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,7 +14,7 @@ export function createGitStatusTool(
     return {
         name: "git_status",
         description: "Get git repository status in the workspace",
-        async execute() {
+        async execute(rawArgs: unknown) {
             try {
                 const { stdout: branchStdout } = await execFileAsync(
                     "git",
