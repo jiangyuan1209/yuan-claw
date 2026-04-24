@@ -1,3 +1,4 @@
+import type { ChatMessage } from "../memory/types.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import {
     prepareMessagesForModel,
@@ -5,17 +6,10 @@ import {
     trimMessages,
 } from "./message-utils.js";
 
-export type AgentRole = "system" | "user" | "assistant" | "tool";
-
-export interface ChatMessage {
-    role: AgentRole;
-    content: string;
-}
-
 export interface ToolDefinition {
     name: string;
     description?: string;
-    inputSchema?: Record<string, unknown>;
+    inputSchema?: unknown;
     execute: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
@@ -35,33 +29,21 @@ export type AgentProtocolMessage =
     | AgentProtocolFinal;
 
 export interface ModelClient {
-    createMessage(input: {
-        messages: ChatMessage[];
-    }): Promise<{
-        content: string;
-    }>;
+    generate(messages: ChatMessage[]): Promise<string>;
+}
+
+export interface EventBusLike {
+    emit: (event: any) => void;
 }
 
 export interface RunLocalAgentLoopParams {
     userInput: string;
-    model: ModelClient;
-    tools: ToolDefinition[];
+    modelClient: ModelClient;
+    tools: Map<string, ToolDefinition>;
+    eventBus?: EventBusLike;
     previousMessages?: ChatMessage[];
     maxSteps?: number;
-    onEvent?: (event: {
-        type:
-            | "run_start"
-            | "step_start"
-            | "model_raw"
-            | "tool_start"
-            | "tool_end"
-            | "assistant"
-            | "warning"
-            | "error"
-            | "run_end";
-        [key: string]: unknown;
-    }) => void;
-    onMessagesUpdated?: (messages: ChatMessage[]) => void;
+    onMessagesUpdated?: (messages: ChatMessage[]) => void | Promise<void>;
 }
 
 export interface RunLocalAgentLoopResult {
@@ -75,16 +57,22 @@ export async function runLocalAgentLoop(
 ): Promise<RunLocalAgentLoopResult> {
     const {
         userInput,
-        model,
+        modelClient,
         tools,
+        eventBus,
         previousMessages = [],
         maxSteps = 8,
-        onEvent,
         onMessagesUpdated,
     } = params;
 
-    const toolMap = new Map(tools.map((tool) => [tool.name, tool]));
-    const systemPrompt = buildSystemPrompt({ tools });
+    const emit = (event: any) => {
+        eventBus?.emit?.(event);
+    };
+
+    const toolMap = tools;
+    const systemPrompt = buildSystemPrompt({
+        tools: Array.from(toolMap.values()),
+    });
 
     let messages: ChatMessage[] = [
         { role: "system", content: systemPrompt },
@@ -93,16 +81,16 @@ export async function runLocalAgentLoop(
     ];
 
     messages = normalizeMessages(messages);
-    persistMessages(messages, onMessagesUpdated);
+    await persistMessages(messages, onMessagesUpdated);
 
-    onEvent?.({
+    emit({
         type: "run_start",
         userInput,
-        toolCount: tools.length,
+        toolCount: toolMap.size,
     });
 
     for (let step = 1; step <= maxSteps; step++) {
-        onEvent?.({
+        emit({
             type: "step_start",
             step,
         });
@@ -116,15 +104,15 @@ export async function runLocalAgentLoop(
         });
 
         let rawModelContent = "";
+
         try {
-            const response = await model.createMessage({
-                messages: modelMessages,
-            });
-            rawModelContent = String(response.content ?? "").trim();
+            rawModelContent = String(
+                await modelClient.generate(modelMessages),
+            ).trim();
         } catch (error) {
             const message = formatErrorMessage("Model request failed", error);
 
-            onEvent?.({
+            emit({
                 type: "error",
                 step,
                 error: message,
@@ -139,9 +127,9 @@ export async function runLocalAgentLoop(
                 content: finalMessage,
             });
 
-            persistMessages(messages, onMessagesUpdated);
+            await persistMessages(messages, onMessagesUpdated);
 
-            onEvent?.({
+            emit({
                 type: "run_end",
                 step,
                 status: "model_error",
@@ -154,7 +142,7 @@ export async function runLocalAgentLoop(
             };
         }
 
-        onEvent?.({
+        emit({
             type: "model_raw",
             step,
             content: rawModelContent,
@@ -167,7 +155,7 @@ export async function runLocalAgentLoop(
                 "我无法正确解析模型输出为协议 JSON。\n\n" +
                 "请重试，或优化 system prompt 以强制输出合法 JSON。";
 
-            onEvent?.({
+            emit({
                 type: "warning",
                 step,
                 reason: "invalid_protocol",
@@ -179,9 +167,9 @@ export async function runLocalAgentLoop(
                 content: finalMessage,
             });
 
-            persistMessages(messages, onMessagesUpdated);
+            await persistMessages(messages, onMessagesUpdated);
 
-            onEvent?.({
+            emit({
                 type: "run_end",
                 step,
                 status: "invalid_protocol",
@@ -202,15 +190,15 @@ export async function runLocalAgentLoop(
                 content: finalMessage,
             });
 
-            persistMessages(messages, onMessagesUpdated);
+            await persistMessages(messages, onMessagesUpdated);
 
-            onEvent?.({
+            emit({
                 type: "assistant",
                 step,
                 message: finalMessage,
             });
 
-            onEvent?.({
+            emit({
                 type: "run_end",
                 step,
                 status: "completed",
@@ -223,70 +211,21 @@ export async function runLocalAgentLoop(
             };
         }
 
-        if (parsed.value.type === "tool_call") {
-            const { toolName, args } = parsed.value;
-            const tool = toolMap.get(toolName);
+        const { toolName, args } = parsed.value;
+        const tool = toolMap.get(toolName);
 
-            if (!tool) {
-                const toolError = {
-                    success: false,
-                    error: `Unknown tool: ${toolName}`,
-                    availableTools: tools.map((t) => t.name),
-                };
+        if (!tool) {
+            const toolError = {
+                success: false,
+                error: `Unknown tool: ${toolName}`,
+                availableTools: Array.from(toolMap.keys()),
+            };
 
-                onEvent?.({
-                    type: "warning",
-                    step,
-                    reason: "unknown_tool",
-                    toolName,
-                });
-
-                messages.push({
-                    role: "assistant",
-                    content: JSON.stringify(parsed.value),
-                });
-
-                messages.push({
-                    role: "tool",
-                    content: serializeToolMessage(toolError),
-                });
-
-                persistMessages(messages, onMessagesUpdated);
-                continue;
-            }
-
-            onEvent?.({
-                type: "tool_start",
+            emit({
+                type: "warning",
                 step,
+                reason: "unknown_tool",
                 toolName,
-                args,
-            });
-
-            let toolResult: unknown;
-            try {
-                toolResult = await tool.execute(args);
-            } catch (error) {
-                toolResult = {
-                    success: false,
-                    error: formatErrorMessage(
-                        `Tool execution failed for "${toolName}"`,
-                        error,
-                    ),
-                };
-
-                onEvent?.({
-                    type: "error",
-                    step,
-                    toolName,
-                    error: toolResult,
-                });
-            }
-
-            onEvent?.({
-                type: "tool_end",
-                step,
-                toolName,
-                result: toolResult,
             });
 
             messages.push({
@@ -296,20 +235,70 @@ export async function runLocalAgentLoop(
 
             messages.push({
                 role: "tool",
-                content: serializeToolMessage(toolResult),
+                content: serializeToolMessage(toolError),
             });
 
-            messages = trimMessages(messages, {
-                maxMessages: 30,
-                maxTotalChars: 30_000,
-                preserveRecentMessages: 10,
-                preserveSystemMessages: true,
-                compactToolMessages: true,
-            });
-
-            persistMessages(messages, onMessagesUpdated);
+            await persistMessages(messages, onMessagesUpdated);
             continue;
         }
+
+        emit({
+            type: "tool_start",
+            step,
+            toolName,
+            args,
+        });
+
+        let toolResult: unknown;
+        let toolSuccess = true;
+
+        try {
+            toolResult = await tool.execute(args);
+        } catch (error) {
+            toolSuccess = false;
+            toolResult = {
+                success: false,
+                error: formatErrorMessage(
+                    `Tool execution failed for "${toolName}"`,
+                    error,
+                ),
+            };
+
+            emit({
+                type: "error",
+                step,
+                toolName,
+                error: toolResult,
+            });
+        }
+
+        emit({
+            type: "tool_end",
+            step,
+            toolName,
+            success: toolSuccess,
+            result: toolResult,
+        });
+
+        messages.push({
+            role: "assistant",
+            content: JSON.stringify(parsed.value),
+        });
+
+        messages.push({
+            role: "tool",
+            content: serializeToolMessage(toolResult),
+        });
+
+        messages = trimMessages(messages, {
+            maxMessages: 30,
+            maxTotalChars: 30_000,
+            preserveRecentMessages: 10,
+            preserveSystemMessages: true,
+            compactToolMessages: true,
+        });
+
+        await persistMessages(messages, onMessagesUpdated);
     }
 
     const finalMessage =
@@ -321,15 +310,15 @@ export async function runLocalAgentLoop(
         content: finalMessage,
     });
 
-    persistMessages(messages, onMessagesUpdated);
+    await persistMessages(messages, onMessagesUpdated);
 
-    onEvent?.({
+    emit({
         type: "warning",
         reason: "max_steps_reached",
         maxSteps,
     });
 
-    onEvent?.({
+    emit({
         type: "run_end",
         status: "max_steps_reached",
     });
@@ -341,10 +330,10 @@ export async function runLocalAgentLoop(
     };
 }
 
-function persistMessages(
+async function persistMessages(
     messages: ChatMessage[],
-    onMessagesUpdated?: (messages: ChatMessage[]) => void,
-): void {
+    onMessagesUpdated?: (messages: ChatMessage[]) => void | Promise<void>,
+): Promise<void> {
     if (!onMessagesUpdated) {
         return;
     }
@@ -357,7 +346,7 @@ function persistMessages(
         compactToolMessages: true,
     });
 
-    onMessagesUpdated(next);
+    await onMessagesUpdated(next);
 }
 
 function normalizeMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -366,7 +355,9 @@ function normalizeMessages(messages: ChatMessage[]): ChatMessage[] {
 
     for (const msg of messages) {
         if (msg.role === "system") {
-            if (systemSeen) continue;
+            if (systemSeen) {
+                continue;
+            }
             systemSeen = true;
         }
 

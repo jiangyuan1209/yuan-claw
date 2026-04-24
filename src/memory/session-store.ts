@@ -39,7 +39,10 @@ export class SessionStore {
             messages.filter((m) => m.role !== "system"),
             {
                 maxMessages: 24,
-                maxContentChars: 8000,
+                maxTotalChars: 8000,
+                preserveRecentMessages: 6,
+                preserveSystemMessages: false,
+                compactToolMessages: true,
             }
         );
 
