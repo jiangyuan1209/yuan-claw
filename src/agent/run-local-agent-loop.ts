@@ -418,6 +418,18 @@ function parseAgentProtocol(
         }
     }
 
+    const fallback = raw.trim();
+
+    if (fallback) {
+        return {
+            ok: true,
+            value: {
+                type: "final",
+                message: fallback,
+            },
+        };
+    }
+
     return {
         ok: false,
         error: "No valid protocol JSON found",
