@@ -1,48 +1,150 @@
 import { z } from "zod";
 
-export const FinalSchema = z.object({
+const FinalActionSchema = z.object({
     type: z.literal("final"),
     message: z.string(),
 });
 
-export const ToolCallSchema = z.object({
+const ToolCallActionSchema = z.object({
     type: z.literal("tool_call"),
     toolName: z.string().min(1),
-    args: z.record(z.any()).default({}),
+    args: z.record(z.string(), z.unknown()).default({}),
 });
 
-export const AgentResponseSchema = z.union([FinalSchema, ToolCallSchema]);
+export const AgentResponseSchema = z.union([
+    FinalActionSchema,
+    ToolCallActionSchema,
+]);
 
-export type FinalResponse = z.infer<typeof FinalSchema>;
-export type ToolCallResponse = z.infer<typeof ToolCallSchema>;
 export type AgentResponse = z.infer<typeof AgentResponseSchema>;
 
-export function normalizeAgentOutput(raw: any): AgentResponse | unknown {
-    if (raw?.type === "tool_call") {
-        return {
-            type: "tool_call" as const,
-            toolName: raw.toolName ?? raw.tool ?? raw.name ?? "",
-            args: raw.args ?? raw.input ?? {},
-        };
+function extractJsonFromCodeFence(text: string): string | null {
+    const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (!fencedMatch) {
+        return null;
     }
 
-    if (raw?.type === "final") {
-        return {
-            type: "final" as const,
-            message: raw.message ?? raw.text ?? raw.content ?? "",
-        };
+    return fencedMatch[1]?.trim() ?? null;
+}
+
+function extractFirstJsonObject(text: string): string | null {
+    const start = text.indexOf("{");
+    if (start === -1) {
+        return null;
     }
 
-    return raw;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (ch === "\\") {
+            escaped = true;
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = !inString;
+            continue;
+        }
+
+        if (inString) {
+            continue;
+        }
+
+        if (ch === "{") {
+            depth += 1;
+            continue;
+        }
+
+        if (ch === "}") {
+            depth -= 1;
+            if (depth === 0) {
+                return text.slice(start, i + 1).trim();
+            }
+        }
+    }
+
+    return null;
 }
 
 export function safeJsonParse(text: string): unknown {
-    const trimmed = text.trim();
-    const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-
-    if (fenced) {
-        return JSON.parse(fenced[1]);
+    if (typeof text !== "string") {
+        throw new Error(`Model output is not a string: ${String(text)}`);
     }
 
-    return JSON.parse(trimmed);
+    const trimmed = text.trim();
+
+    const candidates = [
+        trimmed,
+        extractJsonFromCodeFence(trimmed),
+        extractFirstJsonObject(trimmed),
+    ].filter((value): value is string => Boolean(value));
+
+    let lastError: unknown = null;
+
+    for (const candidate of candidates) {
+        try {
+            return JSON.parse(candidate);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    if (lastError instanceof Error) {
+        throw new Error(`Failed to parse model output as JSON: ${lastError.message}`);
+    }
+
+    throw new Error("Failed to parse model output as JSON");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function normalizeAgentOutput(input: unknown): unknown {
+    if (!isRecord(input)) {
+        return input;
+    }
+
+    const type = input.type;
+    if (type === "final") {
+        return {
+            type: "final",
+            message:
+                typeof input.message === "string"
+                    ? input.message
+                    : typeof input.content === "string"
+                        ? input.content
+                        : typeof input.text === "string"
+                            ? input.text
+                            : "",
+        };
+    }
+
+    if (type === "tool_call") {
+        return {
+            type: "tool_call",
+            toolName:
+                typeof input.toolName === "string"
+                    ? input.toolName
+                    : typeof input.tool === "string"
+                        ? input.tool
+                        : "",
+            args: isRecord(input.args)
+                ? input.args
+                : isRecord(input.input)
+                    ? input.input
+                    : {},
+        };
+    }
+
+    return input;
 }

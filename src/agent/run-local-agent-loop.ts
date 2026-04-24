@@ -14,7 +14,7 @@ import {
 } from "./message-utils.js";
 
 type ModelClient = {
-    generate: (messages: ChatMessage[]) => Promise<string>;
+    generate(messages: ChatMessage[]): Promise<string>;
 };
 
 type RunLocalAgentLoopParams = {
@@ -27,188 +27,270 @@ type RunLocalAgentLoopParams = {
     onMessagesUpdated?: (messages: ChatMessage[]) => Promise<void> | void;
 };
 
-export async function runLocalAgentLoop(params: RunLocalAgentLoopParams) {
-    const {
-        userInput,
-        modelClient,
-        tools,
-        eventBus,
-        maxSteps = 8,
-        previousMessages = [],
-        onMessagesUpdated,
-    } = params;
-
-    let messages: ChatMessage[] = trimMessages(
-        [
-            {
-                role: "system",
-                content: makeSystemPrompt(tools),
-            },
-            ...previousMessages.filter((m) => m.role !== "system"),
-            {
-                role: "user",
-                content: userInput,
-            },
-        ],
+export async function runLocalAgentLoop({
+                                            userInput,
+                                            modelClient,
+                                            tools,
+                                            eventBus,
+                                            maxSteps = 8,
+                                            previousMessages = [],
+                                            onMessagesUpdated,
+                                        }: RunLocalAgentLoopParams): Promise<void> {
+    let messages: ChatMessage[] = [
         {
-            maxMessages: 24,
-            maxContentChars: 12000,
-        }
-    );
+            role: "system",
+            content: makeSystemPrompt(tools),
+        },
+        ...previousMessages.filter((message) => message.role !== "system"),
+        {
+            role: "user",
+            content: userInput,
+        },
+    ];
+
+    messages = trimMessages(messages, {
+        maxMessages: 24,
+        maxContentChars: 12000,
+    });
 
     if (onMessagesUpdated) {
         await onMessagesUpdated(messages);
     }
 
-    eventBus.emit({ type: "run_start", input: userInput });
+    eventBus.emit({
+        type: "run_start",
+        input: userInput,
+    });
+
+    let lastToolCallKey: string | null = null;
+    let repeatedToolCallCount = 0;
 
     for (let step = 1; step <= maxSteps; step++) {
-        let rawText: string;
-
         try {
-            rawText = await modelClient.generate(messages);
-            eventBus.emit({ type: "model_raw", text: rawText, step });
-        } catch (error) {
+            const rawText = await modelClient.generate(messages);
+
             eventBus.emit({
-                type: "run_error",
+                type: "model_raw",
+                text: rawText,
                 step,
-                stage: "model_generate",
-                error: error instanceof Error ? error.message : String(error),
-            });
-            return;
-        }
-
-        let action;
-
-        try {
-            const rawJson = safeJsonParse(rawText);
-            action = AgentResponseSchema.parse(normalizeAgentOutput(rawJson));
-        } catch (error) {
-            eventBus.emit({
-                type: "run_error",
-                step,
-                stage: "parse_model_output",
-                error: error instanceof Error ? error.message : String(error),
-            });
-            return;
-        }
-
-        if (action.type === "final") {
-            messages.push({
-                role: "assistant",
-                content: action.message,
             });
 
-            messages = trimMessages(messages, {
-                maxMessages: 24,
-                maxContentChars: 12000,
-            });
+            const parsed = safeJsonParse(rawText);
+            const normalized = normalizeAgentOutput(parsed);
+            const action = AgentResponseSchema.parse(normalized);
 
-            if (onMessagesUpdated) {
-                await onMessagesUpdated(messages);
+            if (action.type === "final") {
+                messages.push({
+                    role: "assistant",
+                    content: action.message,
+                });
+
+                messages = trimMessages(messages, {
+                    maxMessages: 24,
+                    maxContentChars: 12000,
+                });
+
+                if (onMessagesUpdated) {
+                    await onMessagesUpdated(messages);
+                }
+
+                eventBus.emit({
+                    type: "assistant",
+                    message: action.message,
+                });
+
+                eventBus.emit({
+                    type: "run_end",
+                    reason: "final",
+                    step,
+                });
+
+                return;
+            }
+
+            if (action.type === "tool_call") {
+                const tool = tools.get(action.toolName);
+
+                messages.push({
+                    role: "assistant",
+                    content: compactAssistantToolCall(action.toolName, action.args),
+                });
+
+                const currentToolCallKey = JSON.stringify({
+                    toolName: action.toolName,
+                    args: action.args,
+                });
+
+                if (currentToolCallKey === lastToolCallKey) {
+                    repeatedToolCallCount += 1;
+                } else {
+                    repeatedToolCallCount = 0;
+                    lastToolCallKey = currentToolCallKey;
+                }
+
+                if (repeatedToolCallCount >= 1) {
+                    const duplicateMessage =
+                        "检测到重复的工具调用（同一工具且参数相同）。请基于已有结果继续分析，或改用其他工具。";
+
+                    messages.push({
+                        role: "tool",
+                        content: compactToolResult(action.toolName, {
+                            success: false,
+                            error: duplicateMessage,
+                            duplicate: true,
+                        }),
+                    });
+
+                    messages = trimMessages(messages, {
+                        maxMessages: 24,
+                        maxContentChars: 12000,
+                    });
+
+                    if (onMessagesUpdated) {
+                        await onMessagesUpdated(messages);
+                    }
+
+                    eventBus.emit({
+                        type: "tool_error",
+                        toolName: action.toolName,
+                        error: duplicateMessage,
+                        step,
+                    });
+
+                    continue;
+                }
+
+                if (!tool) {
+                    const errorMessage = `Unknown tool: ${action.toolName}`;
+
+                    messages.push({
+                        role: "tool",
+                        content: compactToolResult(action.toolName, {
+                            success: false,
+                            error: errorMessage,
+                        }),
+                    });
+
+                    messages = trimMessages(messages, {
+                        maxMessages: 24,
+                        maxContentChars: 12000,
+                    });
+
+                    if (onMessagesUpdated) {
+                        await onMessagesUpdated(messages);
+                    }
+
+                    eventBus.emit({
+                        type: "tool_error",
+                        toolName: action.toolName,
+                        error: errorMessage,
+                        step,
+                    });
+
+                    continue;
+                }
+
+                eventBus.emit({
+                    type: "tool_start",
+                    toolName: action.toolName,
+                    args: action.args,
+                    step,
+                });
+
+                try {
+                    const result = await tool.execute(action.args);
+
+                    messages.push({
+                        role: "tool",
+                        content: compactToolResult(action.toolName, result),
+                    });
+
+                    messages = trimMessages(messages, {
+                        maxMessages: 24,
+                        maxContentChars: 12000,
+                    });
+
+                    if (onMessagesUpdated) {
+                        await onMessagesUpdated(messages);
+                    }
+
+                    eventBus.emit({
+                        type: "tool_end",
+                        toolName: action.toolName,
+                        success: Boolean(result?.success),
+                        result,
+                        step,
+                    });
+                } catch (error) {
+                    const errorMessage =
+                        error instanceof Error ? error.message : String(error);
+
+                    messages.push({
+                        role: "tool",
+                        content: compactToolResult(action.toolName, {
+                            success: false,
+                            error: errorMessage,
+                        }),
+                    });
+
+                    messages = trimMessages(messages, {
+                        maxMessages: 24,
+                        maxContentChars: 12000,
+                    });
+
+                    if (onMessagesUpdated) {
+                        await onMessagesUpdated(messages);
+                    }
+
+                    eventBus.emit({
+                        type: "tool_error",
+                        toolName: action.toolName,
+                        error: errorMessage,
+                        step,
+                    });
+                }
+
+                continue;
             }
 
             eventBus.emit({
-                type: "assistant",
-                message: action.message,
-            });
-
-            eventBus.emit({
-                type: "run_end",
-                reason: "final",
+                type: "run_error",
                 step,
+                stage: "protocol",
+                error: "Unsupported action type returned by model",
             });
-
-            return;
-        }
-
-        const tool = tools.get(action.toolName);
-
-        if (!tool) {
-            const errorMessage = `工具不存在: ${action.toolName}`;
-
-            messages.push({
-                role: "assistant",
-                content: compactAssistantToolCall(action.toolName, action.args),
-            });
-
-            messages.push({
-                role: "tool",
-                content: compactToolResult(action.toolName, {
-                    success: false,
-                    error: errorMessage,
-                }),
-            });
-
-            messages = trimMessages(messages, {
-                maxMessages: 24,
-                maxContentChars: 12000,
-            });
-
-            if (onMessagesUpdated) {
-                await onMessagesUpdated(messages);
-            }
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error ? error.message : String(error);
 
             eventBus.emit({
-                type: "tool_error",
-                toolName: action.toolName,
+                type: "run_error",
+                step,
+                stage: "model_or_parse",
                 error: errorMessage,
-                step,
             });
 
-            continue;
-        }
+            messages.push({
+                role: "assistant",
+                content: `模型输出解析失败：${errorMessage}`,
+            });
 
-        eventBus.emit({
-            type: "tool_start",
-            toolName: tool.name,
-            args: action.args,
-            step,
-        });
+            messages = trimMessages(messages, {
+                maxMessages: 24,
+                maxContentChars: 12000,
+            });
 
-        let result;
-        try {
-            result = await tool.execute(action.args);
-        } catch (error) {
-            result = {
-                success: false as const,
-                error: error instanceof Error ? error.message : String(error),
-            };
-        }
-
-        eventBus.emit({
-            type: "tool_end",
-            toolName: tool.name,
-            success: result.success,
-            result,
-            step,
-        });
-
-        messages.push({
-            role: "assistant",
-            content: compactAssistantToolCall(tool.name, action.args),
-        });
-
-        messages.push({
-            role: "tool",
-            content: compactToolResult(tool.name, result),
-        });
-
-        messages = trimMessages(messages, {
-            maxMessages: 24,
-            maxContentChars: 12000,
-        });
-
-        if (onMessagesUpdated) {
-            await onMessagesUpdated(messages);
+            if (onMessagesUpdated) {
+                await onMessagesUpdated(messages);
+            }
         }
     }
 
-    const stopMessage = "已达到最大执行步数限制，任务已停止。";
+    const maxStepsMessage = `已达到最大步骤数限制（${maxSteps}），任务结束。`;
 
     messages.push({
         role: "assistant",
-        content: stopMessage,
+        content: maxStepsMessage,
     });
 
     messages = trimMessages(messages, {
@@ -222,7 +304,7 @@ export async function runLocalAgentLoop(params: RunLocalAgentLoopParams) {
 
     eventBus.emit({
         type: "assistant",
-        message: stopMessage,
+        message: maxStepsMessage,
     });
 
     eventBus.emit({
