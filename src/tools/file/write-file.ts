@@ -19,6 +19,7 @@ export function createWriteFileTool(
     return {
         name: "write_file",
         description: "Write a UTF-8 text file inside the workspace",
+        riskLevel: "confirm",
         inputSchema: WriteFileInputSchema,
         async execute(rawArgs) {
             try {

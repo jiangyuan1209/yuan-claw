@@ -14,6 +14,7 @@ export function createGitStatusTool(
     return {
         name: "git_status",
         description: "Get git repository status in the workspace",
+        riskLevel: "safe",
         async execute(rawArgs: unknown) {
             try {
                 const { stdout: branchStdout } = await execFileAsync(

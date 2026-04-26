@@ -32,3 +32,7 @@ export function createToolRegistry(
 
     return new Map(tools.map((tool) => [tool.name, tool]));
 }
+
+export function getToolsFromRegistry(registry: Map<string, Tool>): Tool[] {
+    return Array.from(registry.values());
+}

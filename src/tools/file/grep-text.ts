@@ -21,6 +21,7 @@ export function createGrepTextTool(
     return {
         name: "grep_text",
         description: "Search text in files under the workspace",
+        riskLevel: "safe",
         inputSchema: GrepTextInputSchema,
         async execute(rawArgs: unknown) {
             try {

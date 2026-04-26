@@ -7,12 +7,21 @@ export type AgentEvent =
     toolName: string;
     success: boolean;
     result: unknown;
-    step?: number;
+    step: number;
 }
     | { type: "tool_error"; toolName: string; error: string; step: number }
     | { type: "assistant"; message: string }
-    | { type: "run_error"; step: number; stage: string; error: string }
-    | { type: "run_end"; reason: string; step: number };
+    | {
+    type: "run_error";
+    step: number;
+    stage: "model_generate" | "parse_agent_response" | "confirmation";
+    error: string;
+}
+    | {
+    type: "run_end";
+    reason: "final" | "max_steps_exceeded";
+    step: number;
+};
 
 export type EventBus = {
     emit: (event: AgentEvent) => void;
@@ -35,7 +44,7 @@ function printToolResultPreview(result: unknown) {
 }
 
 export function createConsoleEventBus(
-    options: CreateConsoleEventBusOptions = {}
+    options: CreateConsoleEventBusOptions = {},
 ): EventBus {
     const json = options.json ?? false;
     const quiet = options.quiet ?? false;
@@ -51,9 +60,11 @@ export function createConsoleEventBus(
                 if (event.type === "assistant") {
                     console.log(event.message);
                 }
+
                 if (event.type === "run_error") {
                     console.error(`[run_error] ${event.stage}: ${event.error}`);
                 }
+
                 return;
             }
 
@@ -61,30 +72,37 @@ export function createConsoleEventBus(
                 case "run_start":
                     console.log(`\n[run_start] ${event.input}`);
                     break;
+
                 case "model_raw":
                     console.log(`\n[model_raw] step=${event.step}`);
                     console.log(event.text);
                     break;
+
                 case "tool_start":
                     console.log(`\n[tool_start] ${event.toolName}`);
                     console.log(JSON.stringify(event.args, null, 2));
                     break;
+
                 case "tool_end":
                     console.log(`\n[tool_end] ${event.toolName} success=${event.success}`);
                     printToolResultPreview(event.result);
                     break;
+
                 case "tool_error":
                     console.log(`\n[tool_error] ${event.toolName}`);
                     console.log(event.error);
                     break;
+
                 case "assistant":
                     console.log(`\n[assistant]`);
                     console.log(event.message);
                     break;
+
                 case "run_error":
                     console.log(`\n[run_error] stage=${event.stage} step=${event.step}`);
                     console.log(event.error);
                     break;
+
                 case "run_end":
                     console.log(`\n[run_end] reason=${event.reason} step=${event.step}`);
                     break;
