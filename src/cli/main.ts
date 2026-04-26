@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import "dotenv/config";
+import { initGlobalProxy } from "../lib/initGlobalProxy.js";
 import type { ChatMessage } from "../memory/types.js";
 import { parseCliArgs } from "./parse-args.js";
 import { getHelpText } from "./help.js";
@@ -9,6 +10,8 @@ import { SessionStore } from "../memory/session-store.js";
 import { createConsoleEventBus } from "../events/event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
 import { createModelClient } from "../model/client.js";
+
+initGlobalProxy();
 
 async function main() {
     const args = parseCliArgs(process.argv.slice(2));
