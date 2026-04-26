@@ -1,51 +1,61 @@
 import { z } from "zod";
-import type { Tool } from "../types.js";
-import { validateUrlByPolicy } from "../../security/network-policy.js";
+import type { Tool, ToolResult } from "../types.js";
 
 const HttpFetchInputSchema = z.object({
-    url: z.string().min(1),
-    method: z.enum(["GET", "POST"]).default("GET"),
-    headers: z.record(z.string()).optional(),
-    body: z.string().optional(),
-    maxChars: z.number().int().positive().max(20000).default(8000),
+    url: z.string().url(),
 });
 
-type CreateHttpFetchToolOptions = {};
+type CreateHttpFetchToolOptions = {
+    timeoutMs?: number;
+    userAgent?: string;
+};
 
 export function createHttpFetchTool(
-    _options: CreateHttpFetchToolOptions = {}
+    options: CreateHttpFetchToolOptions = {}
 ): Tool {
+    const timeoutMs = options.timeoutMs ?? 15000;
+    const userAgent =
+        options.userAgent ??
+        "Mozilla/5.0 (compatible; XSimpleHttpFetch/1.0)";
+
     return {
         name: "http_fetch",
-        description: "Fetch a web page or API response over HTTP/HTTPS",
+        description:
+            "Fetch a URL and return status, headers, final URL, and response text",
         riskLevel: "safe",
         inputSchema: HttpFetchInputSchema,
-        async execute(rawArgs: unknown) {
+        async execute(rawArgs): Promise<ToolResult> {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+
             try {
                 const args = HttpFetchInputSchema.parse(rawArgs);
-                const url = validateUrlByPolicy(args.url);
 
-                const response = await fetch(url.toString(), {
-                    method: args.method,
-                    headers: args.headers,
-                    body: args.method === "POST" ? args.body : undefined,
+                const response = await fetch(args.url, {
+                    method: "GET",
+                    redirect: "follow",
+                    headers: {
+                        "User-Agent": userAgent,
+                        Accept:
+                            "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
+                    },
+                    signal: controller.signal,
                 });
 
-                const contentType = response.headers.get("content-type");
                 const text = await response.text();
-                const truncatedText = text.slice(0, args.maxChars);
+                const headers = Object.fromEntries(response.headers.entries());
 
                 return {
                     success: true,
                     output: {
-                        url: url.toString(),
-                        status: response.status,
+                        url: args.url,
+                        finalUrl: response.url,
                         ok: response.ok,
-                        contentType,
-                        text: truncatedText,
-                        truncated: text.length > truncatedText.length,
-                        totalChars: text.length,
-                        returnedChars: truncatedText.length,
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers,
+                        contentType: response.headers.get("content-type") ?? "",
+                        text,
                     },
                 };
             } catch (error) {
@@ -53,6 +63,8 @@ export function createHttpFetchTool(
                     success: false,
                     error: error instanceof Error ? error.message : String(error),
                 };
+            } finally {
+                clearTimeout(timer);
             }
         },
     };

@@ -10,7 +10,12 @@ import { createShellExecTool } from "./shell/shell-exec.js";
 import { createGitStatusTool } from "./git/git-status.js";
 import { createGitDiffTool } from "./git/git-diff.js";
 
-import { createHttpFetchTool } from "./web/http-fetch.js";
+import {
+    createHttpFetchTool,
+    createWebSearchTool,
+    createExtractReadableTextTool,
+    createBraveSearchProvider,
+} from "./web/index.js";
 
 type CreateToolRegistryOptions = {
     workspaceRoot: string;
@@ -28,7 +33,23 @@ export function createToolRegistry(
         createGitStatusTool({ workspaceRoot: options.workspaceRoot }),
         createGitDiffTool({ workspaceRoot: options.workspaceRoot }),
         createHttpFetchTool(),
+        createExtractReadableTextTool(),
     ];
+
+    const braveApiKey = process.env.BRAVE_API_KEY;
+
+    if (braveApiKey) {
+        tools.push(
+            createWebSearchTool({
+                provider: createBraveSearchProvider({
+                    apiKey: braveApiKey,
+                }),
+            })
+        );
+        console.warn("[tools] web_search enabled via Brave Search API");
+    } else {
+        console.warn("[tools] web_search disabled: set BRAVE_SEARCH_API_KEY");
+    }
 
     return new Map(tools.map((tool) => [tool.name, tool]));
 }
