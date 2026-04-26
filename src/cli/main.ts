@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import "dotenv/config";
 import type { ChatMessage } from "../memory/types.js";
 import { parseCliArgs } from "./parse-args.js";
@@ -38,12 +39,12 @@ async function main() {
         model: args.model,
     });
 
-    await runLocalAgentLoop({
+    const finalMessage = await runLocalAgentLoop({
         userInput: args.userInput,
         modelClient,
         tools,
         eventBus,
-        maxSteps: args.maxSteps ?? 8,
+        maxSteps: args.maxSteps ?? 30,
         previousMessages: previousSession?.messages ?? [],
         onMessagesUpdated: args.sessionId
             ? async (messages: ChatMessage[]) => {
@@ -51,6 +52,10 @@ async function main() {
             }
             : undefined,
     });
+
+    if (!args.quiet) {
+        console.log(finalMessage);
+    }
 }
 
 main().catch((error) => {

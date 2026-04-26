@@ -20,6 +20,7 @@ export function createListFilesTool(
     return {
         name: "list_files",
         description: "List files and directories inside the workspace",
+        riskLevel: "safe",
         inputSchema: ListFilesInputSchema,
         async execute(rawArgs: unknown) {
             try {

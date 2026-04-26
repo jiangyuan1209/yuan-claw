@@ -18,6 +18,7 @@ export function createHttpFetchTool(
     return {
         name: "http_fetch",
         description: "Fetch a web page or API response over HTTP/HTTPS",
+        riskLevel: "safe",
         inputSchema: HttpFetchInputSchema,
         async execute(rawArgs: unknown) {
             try {

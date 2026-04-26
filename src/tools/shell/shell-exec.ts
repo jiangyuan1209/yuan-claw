@@ -21,6 +21,7 @@ export function createShellExecTool(
     return {
         name: "shell_exec",
         description: "Execute a shell command in the workspace with safety policy",
+        riskLevel: "dangerous",
         inputSchema: ShellExecInputSchema,
         async execute(rawArgs: unknown) {
             try {

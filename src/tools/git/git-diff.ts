@@ -21,6 +21,7 @@ export function createGitDiffTool(
     return {
         name: "git_diff",
         description: "Get git diff in the workspace",
+        riskLevel: "safe",
         inputSchema: GitDiffInputSchema,
         async execute(rawArgs : unknown) {
             try {

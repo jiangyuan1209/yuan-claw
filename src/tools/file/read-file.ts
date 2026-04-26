@@ -18,6 +18,7 @@ export function createReadFileTool(
     return {
         name: "read_file",
         description: "Read a UTF-8 text file from the workspace",
+        riskLevel: "safe",
         inputSchema: ReadFileInputSchema,
         async execute(rawArgs) {
             try {
