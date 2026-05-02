@@ -3,11 +3,13 @@ import type { Tool } from "../tools/types.js";
 import type { EventBus } from "../events/event-bus.js";
 import { buildSystemPrompt } from "./build-system-prompt.js";
 import { parseAgentResponse } from "./parse-agent-response.js";
-import { readConfirmation } from "./read-confirmation.js";
+import type { ApprovalDecision } from "./read-approval.js";
 
 type ModelClient = {
     generate: (messages: ChatMessage[]) => Promise<string>;
 };
+
+export type ApprovalMode = "ask" | "always-allow";
 
 export type RunLocalAgentLoopParams = {
     userInput: string;
@@ -17,6 +19,8 @@ export type RunLocalAgentLoopParams = {
     maxSteps?: number;
     previousMessages?: ChatMessage[];
     onMessagesUpdated?: (messages: ChatMessage[]) => Promise<void>;
+    approvalMode?: ApprovalMode;
+    requestApproval?: (message: string) => Promise<ApprovalDecision>;
 };
 
 function stringifyForModel(value: unknown): string {
@@ -50,7 +54,7 @@ async function persistMessages(
 
 export async function runLocalAgentLoop(
     params: RunLocalAgentLoopParams,
-): Promise<string> {
+): Promise<{ finalMessage: string; approvalMode: ApprovalMode }> {
     const {
         userInput,
         modelClient,
@@ -59,9 +63,11 @@ export async function runLocalAgentLoop(
         maxSteps = 8,
         previousMessages = [],
         onMessagesUpdated,
+        requestApproval,
     } = params;
 
-    let allowOneHighRiskToolCall = false;
+    let approvalMode: ApprovalMode = params.approvalMode ?? "ask";
+    let allowOneHighRiskToolCall = approvalMode === "always-allow";
 
     eventBus.emit({
         type: "run_start",
@@ -156,14 +162,23 @@ export async function runLocalAgentLoop(
                 step,
             });
 
-            return response.message;
+            return {
+                finalMessage: response.message,
+                approvalMode,
+            };
         }
 
         if (response.type === "ask_confirmation") {
-            let approved: boolean;
+            let decision: ApprovalDecision;
 
             try {
-                approved = await readConfirmation(response.message);
+                if (approvalMode === "always-allow") {
+                    decision = "allow-once";
+                } else if (requestApproval) {
+                    decision = await requestApproval(response.message);
+                } else {
+                    decision = "deny";
+                }
             } catch (error) {
                 const errorMessage =
                     error instanceof Error ? error.message : String(error);
@@ -178,13 +193,26 @@ export async function runLocalAgentLoop(
                 throw error;
             }
 
-            allowOneHighRiskToolCall = approved;
+            if (decision === "allow-always") {
+                approvalMode = "always-allow";
+                allowOneHighRiskToolCall = true;
+                console.log(
+                    "已启用“总是允许”模式，本会话后续 confirm / dangerous 操作将自动执行。输入 /reset 可恢复逐次确认。\n"
+                );
+            } else if (decision === "allow-once") {
+                allowOneHighRiskToolCall = true;
+            } else {
+                allowOneHighRiskToolCall = false;
+            }
 
             messages.push({
                 role: "user",
-                content: approved
-                    ? `The user approved your request: ${response.message}`
-                    : `The user denied your request: ${response.message}. Do not perform that action. Offer a safer alternative or stop.`,
+                content:
+                    decision === "deny"
+                        ? `The user denied your request: ${response.message}. Do not perform that action. Offer a safer alternative or stop.`
+                        : decision === "allow-always"
+                            ? `The user approved your request and enabled always-allow mode for this session: ${response.message}`
+                            : `The user approved your request: ${response.message}`,
             });
 
             await persistMessages(messages, onMessagesUpdated);
@@ -219,7 +247,11 @@ export async function runLocalAgentLoop(
             const needsConfirmation =
                 tool.riskLevel === "confirm" || tool.riskLevel === "dangerous";
 
-            if (needsConfirmation && !allowOneHighRiskToolCall) {
+            if (
+                needsConfirmation &&
+                approvalMode !== "always-allow" &&
+                !allowOneHighRiskToolCall
+            ) {
                 const errorMessage = `Tool "${tool.name}" requires confirmation before execution. Ask for confirmation first.`;
 
                 eventBus.emit({
@@ -253,11 +285,11 @@ export async function runLocalAgentLoop(
             try {
                 result = await tool.execute(response.args);
 
-                if (needsConfirmation) {
+                if (needsConfirmation && approvalMode !== "always-allow") {
                     allowOneHighRiskToolCall = false;
                 }
             } catch (error) {
-                if (needsConfirmation) {
+                if (needsConfirmation && approvalMode !== "always-allow") {
                     allowOneHighRiskToolCall = false;
                 }
 

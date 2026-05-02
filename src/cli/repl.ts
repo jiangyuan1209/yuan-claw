@@ -6,7 +6,11 @@ import { resolveWorkspaceRoot } from "../security/path-guards.js";
 import { createToolRegistry } from "../tools/registry.js";
 import { SessionStore } from "../memory/session-store.js";
 import { createConsoleEventBus } from "../events/event-bus.js";
-import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
+import {
+    runLocalAgentLoop,
+    type ApprovalMode,
+} from "../agent/run-local-agent-loop.js";
+import type { ApprovalDecision } from "../agent/read-approval.js";
 import { createModelClient } from "../model/client.js";
 import type { AppConfig } from "../config/load-config.js";
 
@@ -29,12 +33,51 @@ export async function startRepl(options: StartReplOptions) {
         workspaceRoot,
         config: options.config,
     });
+
     const modelClient = createModelClient({
         model: options.model,
         config: options.config,
     });
 
     let messages: ChatMessage[] = [];
+    let approvalMode: ApprovalMode = "ask";
+
+    async function requestApproval(message: string): Promise<ApprovalDecision> {
+        while (true) {
+            console.log(message);
+            console.log("");
+            console.log("请选择：");
+            console.log("  1) 不允许");
+            console.log("  2) 允许");
+            console.log("  3) 总是允许");
+            console.log("");
+
+            const answer = (await rl.question("输入 1/2/3: "))
+                .trim()
+                .toLowerCase();
+
+            console.log("");
+
+            if (answer === "1" || answer === "n" || answer === "no") {
+                return "deny";
+            }
+
+            if (answer === "2" || answer === "y" || answer === "yes") {
+                return "allow-once";
+            }
+
+            if (
+                answer === "3" ||
+                answer === "a" ||
+                answer === "always" ||
+                answer === "always-allow"
+            ) {
+                return "allow-always";
+            }
+
+            console.log("无效输入，请输入 1、2 或 3。\n");
+        }
+    }
 
     console.log("Welcome to my-agent!");
     console.log("Type /help for commands, /exit to quit.\n");
@@ -63,18 +106,21 @@ export async function startRepl(options: StartReplOptions) {
         if (userInput === "/help") {
             console.log(`
 Commands:
-  /help   Show help
-  /exit   Exit
-  /quit   Exit
-  /clear  Clear current session history
-  /save   Save current session
+  /help    Show help
+  /exit    Exit
+  /quit    Exit
+  /clear   Clear current session history
+  /save    Save current session
+  /reset   Reset approval mode to ask
+  /status  Show current session status
 `);
             continue;
         }
 
         if (userInput === "/clear") {
             messages = [];
-            console.log("Session history cleared.");
+            approvalMode = "ask";
+            console.log("Session history cleared. Approval mode reset to ask.");
             continue;
         }
 
@@ -84,26 +130,43 @@ Commands:
             continue;
         }
 
+        if (userInput === "/reset") {
+            approvalMode = "ask";
+            console.log("Approval mode reset to ask.");
+            continue;
+        }
+
+        if (userInput === "/status") {
+            console.log(`sessionId: ${sessionId}`);
+            console.log(`approvalMode: ${approvalMode}`);
+            console.log(`messageCount: ${messages.length}`);
+            continue;
+        }
+
         const eventBus = createConsoleEventBus({
             json: options.json,
             quiet: options.quiet,
         });
 
         try {
-            const finalMessage = await runLocalAgentLoop({
+            const result = await runLocalAgentLoop({
                 userInput,
                 modelClient,
                 tools,
                 eventBus,
                 maxSteps: options.maxSteps ?? 30,
                 previousMessages: messages,
+                approvalMode,
+                requestApproval,
                 onMessagesUpdated: async (updatedMessages: ChatMessage[]) => {
                     messages = updatedMessages;
                 },
             });
 
+            approvalMode = result.approvalMode;
+
             if (!options.quiet) {
-                console.log(finalMessage);
+                console.log(result.finalMessage);
             }
         } catch (error) {
             console.error(error);
