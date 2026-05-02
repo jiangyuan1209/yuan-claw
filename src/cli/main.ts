@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import "dotenv/config";
-import readline from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
+import { select, cancel, isCancel } from "@clack/prompts";
 import { initGlobalProxy } from "../lib/initGlobalProxy.js";
 import type { ChatMessage } from "../memory/types.js";
 import { parseCliArgs } from "./parse-args.js";
@@ -20,46 +19,35 @@ import { startRepl } from "./repl.js";
 async function requestApprovalFromConsole(
     message: string,
 ): Promise<ApprovalDecision> {
-    const rl = readline.createInterface({ input, output });
+    const result = await select<ApprovalDecision>({
+        message,
+        options: [
+            {
+                value: "deny",
+                label: "不允许",
+                hint: "拒绝这次操作",
+            },
+            {
+                value: "allow-once",
+                label: "允许",
+                hint: "仅允许这一次",
+            },
+            {
+                value: "allow-always",
+                label: "总是允许",
+                hint: "仅当前本次运行/会话有效",
+            },
+        ],
+    });
 
-    try {
-        while (true) {
-            console.log(message);
-            console.log("");
-            console.log("请选择：");
-            console.log("  1) 不允许");
-            console.log("  2) 允许");
-            console.log("  3) 总是允许");
-            console.log("");
-
-            const answer = (await rl.question("输入 1/2/3: "))
-                .trim()
-                .toLowerCase();
-
-            console.log("");
-
-            if (answer === "1" || answer === "n" || answer === "no") {
-                return "deny";
-            }
-
-            if (answer === "2" || answer === "y" || answer === "yes") {
-                return "allow-once";
-            }
-
-            if (
-                answer === "3" ||
-                answer === "a" ||
-                answer === "always" ||
-                answer === "always-allow"
-            ) {
-                return "allow-always";
-            }
-
-            console.log("无效输入，请输入 1、2 或 3。\n");
-        }
-    } finally {
-        rl.close();
+    if (isCancel(result)) {
+        cancel("已取消，本次按不允许处理。");
+        console.log("");
+        return "deny";
     }
+
+    console.log("");
+    return result;
 }
 
 async function main() {
