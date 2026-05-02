@@ -80,13 +80,18 @@ export async function startRepl(options: StartReplOptions) {
     }
 
     console.log("Welcome to my-agent!");
-    console.log("Type /help for commands, /exit to quit.\n");
+    console.log("Type /help for commands, /exit to quit.");
+    console.log("Approval mode is shown in the prompt: [ask] or [always].\n");
 
     while (true) {
         let line: string;
 
         try {
-            line = await rl.question("my-agent> ");
+            const promptLabel = approvalMode === "always-allow"
+                ? "my-agent[always]> "
+                : "my-agent[ask]> ";
+
+            line = await rl.question(promptLabel);
         } catch {
             console.log("\nBye!");
             break;
