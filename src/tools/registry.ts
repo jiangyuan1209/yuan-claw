@@ -1,3 +1,4 @@
+import type { AppConfig } from "../config/load-config.js";
 import type { Tool } from "./types.js";
 
 import { createReadFileTool } from "./file/read-file.js";
@@ -19,6 +20,7 @@ import {
 
 type CreateToolRegistryOptions = {
     workspaceRoot: string;
+    config?: AppConfig;
 };
 
 export function createToolRegistry(
@@ -36,7 +38,13 @@ export function createToolRegistry(
         createExtractReadableTextTool(),
     ];
 
-    const braveApiKey = process.env.BRAVE_API_KEY;
+    const config = options.config ?? {};
+
+    const braveApiKey =
+        config.BRAVE_SEARCH_API_KEY ??
+        config.BRAVE_API_KEY ??
+        process.env.BRAVE_SEARCH_API_KEY ??
+        process.env.BRAVE_API_KEY;
 
     if (braveApiKey) {
         tools.push(
@@ -48,7 +56,9 @@ export function createToolRegistry(
         );
         console.warn("[tools] web_search enabled via Brave Search API");
     } else {
-        console.warn("[tools] web_search disabled: set BRAVE_SEARCH_API_KEY");
+        console.warn(
+            "[tools] web_search disabled: set BRAVE_SEARCH_API_KEY or BRAVE_API_KEY"
+        );
     }
 
     return new Map(tools.map((tool) => [tool.name, tool]));

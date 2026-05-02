@@ -10,10 +10,11 @@ import { SessionStore } from "../memory/session-store.js";
 import { createConsoleEventBus } from "../events/event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
 import { createModelClient } from "../model/client.js";
+import { ensureUserConfigInitialized } from "../config/init-user-config.js";
+import { loadAppConfig } from "../config/load-config.js";
+import { startRepl } from "./repl.js";
 
-initGlobalProxy();
-
-async function main() {
+async function runSingleTurn() {
     const args = parseCliArgs(process.argv.slice(2));
 
     if (args.help) {
@@ -21,13 +22,33 @@ async function main() {
         return;
     }
 
+    const initResult = await ensureUserConfigInitialized();
+    const config = await loadAppConfig();
+
+    if (initResult.createdSettings) {
+        console.log(`Initialized config file at: ${initResult.settingsPath}`);
+        console.log("Please edit the file and add your model settings if needed.\n");
+    }
+
+    initGlobalProxy(config);
+
     if (!args.userInput) {
-        console.error(getHelpText());
-        process.exit(1);
+        await startRepl({
+            workspace: args.workspace,
+            model: args.model,
+            json: args.json,
+            quiet: args.quiet,
+            maxSteps: args.maxSteps,
+            config,
+        });
+        return;
     }
 
     const workspaceRoot = resolveWorkspaceRoot(args.workspace ?? process.cwd());
-    const tools = createToolRegistry({ workspaceRoot });
+    const tools = createToolRegistry({
+        workspaceRoot,
+        config,
+    });
     const sessionStore = new SessionStore();
     const eventBus = createConsoleEventBus({
         json: args.json,
@@ -40,6 +61,7 @@ async function main() {
 
     const modelClient = createModelClient({
         model: args.model,
+        config,
     });
 
     const finalMessage = await runLocalAgentLoop({
@@ -61,7 +83,7 @@ async function main() {
     }
 }
 
-main().catch((error) => {
+runSingleTurn().catch((error) => {
     console.error(error);
     process.exit(1);
 });
