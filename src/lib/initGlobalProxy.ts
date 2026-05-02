@@ -1,9 +1,14 @@
 import { ProxyAgent, setGlobalDispatcher } from "undici";
+import type { AppConfig } from "../config/load-config.js";
 
 let proxyInitialized = false;
 
-function resolveProxyUrl(): string | undefined {
+function resolveProxyUrl(config?: AppConfig): string | undefined {
     return (
+        config?.HTTPS_PROXY ||
+        config?.HTTP_PROXY ||
+        config?.https_proxy ||
+        config?.http_proxy ||
         process.env.HTTPS_PROXY ||
         process.env.HTTP_PROXY ||
         process.env.https_proxy ||
@@ -29,28 +34,16 @@ function maskProxyForLog(proxyUrl: string): string {
 /**
  * 初始化 Node/undici 全局代理。
  *
- * 作用：
- * - 让全局 fetch / undici 请求走环境变量指定的代理
- * - 适用于 Brave、Tavily、Firecrawl 等基于 fetch 的请求
- *
- * 支持环境变量：
- * - HTTPS_PROXY
- * - HTTP_PROXY
- * - https_proxy
- * - http_proxy
- *
- * 用法：
- * ```ts
- * import { initGlobalProxy } from "./lib/initGlobalProxy";
- * initGlobalProxy();
- * ```
+ * 优先级：
+ * 1. 传入的 config
+ * 2. process.env
  */
-export function initGlobalProxy(): void {
+export function initGlobalProxy(config?: AppConfig): void {
     if (proxyInitialized) {
         return;
     }
 
-    const proxyUrl = resolveProxyUrl();
+    const proxyUrl = resolveProxyUrl(config);
 
     if (!proxyUrl) {
         console.log("[proxy] not configured, using direct connection");

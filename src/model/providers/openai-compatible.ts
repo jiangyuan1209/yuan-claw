@@ -1,24 +1,40 @@
 import OpenAI from "openai";
 import type { ChatMessage } from "../../memory/types.js";
+import type { AppConfig } from "../../config/load-config.js";
 
 type CreateOpenAICompatibleClientOptions = {
     model?: string;
+    config?: AppConfig;
 };
 
 export function createOpenAICompatibleClient(
     options: CreateOpenAICompatibleClientOptions = {}
 ) {
-    const apiKey = process.env.MODEL_API_KEY ?? process.env.OPENAI_API_KEY;
-    const baseURL = process.env.MODEL_BASE_URL ?? process.env.OPENAI_BASE_URL;
+    const config = options.config ?? {};
+
+    const apiKey =
+        config.MODEL_API_KEY ??
+        config.OPENAI_API_KEY ??
+        process.env.MODEL_API_KEY ??
+        process.env.OPENAI_API_KEY;
+
+    const baseURL =
+        config.MODEL_BASE_URL ??
+        config.OPENAI_BASE_URL ??
+        process.env.MODEL_BASE_URL ??
+        process.env.OPENAI_BASE_URL;
+
     const model =
         options.model ??
+        config.MODEL_NAME ??
+        config.OPENAI_MODEL ??
         process.env.MODEL_NAME ??
         process.env.OPENAI_MODEL ??
         "gpt-4o-mini";
 
     if (!apiKey) {
         throw new Error(
-            "Missing MODEL_API_KEY / OPENAI_API_KEY in environment variables."
+            "Missing MODEL_API_KEY / OPENAI_API_KEY in environment variables or ~/.my-agent/settings.json."
         );
     }
 
