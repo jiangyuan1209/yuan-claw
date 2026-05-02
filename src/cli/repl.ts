@@ -23,6 +23,96 @@ type StartReplOptions = {
     config: AppConfig;
 };
 
+function approvalLabel(decision: ApprovalDecision): string {
+    switch (decision) {
+        case "deny":
+            return "不允许";
+        case "allow-once":
+            return "允许";
+        case "allow-always":
+            return "总是允许";
+    }
+}
+
+function printApprovalMenu(message: string, selectedIndex: number) {
+    const options = [
+        { label: "不允许", hint: "拒绝这次操作" },
+        { label: "允许", hint: "仅允许这一次" },
+        { label: "总是允许", hint: "当前会话后续 confirm / dangerous 操作自动允许" },
+    ];
+
+    output.write(`\n${message}\n\n`);
+    output.write("使用 ↑ / ↓ 切换，Enter 确认，Ctrl+C 拒绝\n\n");
+
+    for (let i = 0; i < options.length; i += 1) {
+        const prefix = i === selectedIndex ? "❯" : " ";
+        output.write(`${prefix} ${options[i].label}  ${options[i].hint}\n`);
+    }
+
+    output.write("\n");
+}
+
+async function selectApprovalWithArrows(
+    message: string,
+): Promise<ApprovalDecision> {
+    const values: ApprovalDecision[] = ["deny", "allow-once", "allow-always"];
+    let selectedIndex = 1;
+
+    return await new Promise<ApprovalDecision>((resolve) => {
+        const cleanup = () => {
+            input.off("data", onData);
+            if (input.isTTY) {
+                input.setRawMode(false);
+            }
+        };
+
+        const onData = (buffer: Buffer) => {
+            const key = buffer.toString("utf8");
+
+            if (key === "\u0003") {
+                cleanup();
+                output.write("\n");
+                resolve("deny");
+                return;
+            }
+
+            if (key === "\r" || key === "\n") {
+                const result = values[selectedIndex];
+                cleanup();
+                output.write(`已选择：${approvalLabel(result)}\n\n`);
+                resolve(result);
+                return;
+            }
+
+            if (key === "\u001b[A") {
+                selectedIndex =
+                    selectedIndex === 0 ? values.length - 1 : selectedIndex - 1;
+                printApprovalMenu(message, selectedIndex);
+                return;
+            }
+
+            if (key === "\u001b[B") {
+                selectedIndex =
+                    selectedIndex === values.length - 1 ? 0 : selectedIndex + 1;
+                printApprovalMenu(message, selectedIndex);
+            }
+        };
+
+        if (output.isTTY) {
+            output.write("\x1b[2K\r");
+        }
+
+        if (input.isTTY) {
+            input.setRawMode(true);
+        }
+
+        input.resume();
+        input.on("data", onData);
+
+        printApprovalMenu(message, selectedIndex);
+    });
+}
+
 export async function startRepl(options: StartReplOptions) {
     const rl = readline.createInterface({ input, output });
     const sessionStore = new SessionStore();
@@ -43,40 +133,9 @@ export async function startRepl(options: StartReplOptions) {
     let approvalMode: ApprovalMode = "ask";
 
     async function requestApproval(message: string): Promise<ApprovalDecision> {
-        while (true) {
-            console.log(message);
-            console.log("");
-            console.log("请选择：");
-            console.log("  1) 不允许");
-            console.log("  2) 允许");
-            console.log("  3) 总是允许");
-            console.log("");
-
-            const answer = (await rl.question("输入 1/2/3: "))
-                .trim()
-                .toLowerCase();
-
-            console.log("");
-
-            if (answer === "1" || answer === "n" || answer === "no") {
-                return "deny";
-            }
-
-            if (answer === "2" || answer === "y" || answer === "yes") {
-                return "allow-once";
-            }
-
-            if (
-                answer === "3" ||
-                answer === "a" ||
-                answer === "always" ||
-                answer === "always-allow"
-            ) {
-                return "allow-always";
-            }
-
-            console.log("无效输入，请输入 1、2 或 3。\n");
-        }
+        const result = await selectApprovalWithArrows(message);
+        console.log("");
+        return result;
     }
 
     console.log("Welcome to my-agent!");
@@ -87,9 +146,10 @@ export async function startRepl(options: StartReplOptions) {
         let line: string;
 
         try {
-            const promptLabel = approvalMode === "always-allow"
-                ? "my-agent[always]> "
-                : "my-agent[ask]> ";
+            const promptLabel =
+                approvalMode === "always-allow"
+                    ? "my-agent[always]> "
+                    : "my-agent[ask]> ";
 
             line = await rl.question(promptLabel);
         } catch {
@@ -114,7 +174,7 @@ Commands:
   /help    Show help
   /exit    Exit
   /quit    Exit
-  /clear   Clear current session history
+  /clear   Clear current session history and reset approval mode
   /save    Save current session
   /reset   Reset approval mode to ask
   /status  Show current session status
