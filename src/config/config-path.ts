@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-export const MY_AGENT_DIR_NAME = ".my-agent";
+export const MY_AGENT_DIR_NAME = ".yuan-agent";
 
 export function getUserConfigDir(): string {
     return path.join(os.homedir(), MY_AGENT_DIR_NAME);

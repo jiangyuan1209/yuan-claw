@@ -138,7 +138,7 @@ export async function startRepl(options: StartReplOptions) {
         return result;
     }
 
-    console.log("Welcome to my-agent!");
+    console.log("Welcome to Yuan Agent!");
     console.log("Type /help for commands, /exit to quit.");
     console.log("Approval mode is shown in the prompt: [ask] or [always].\n");
 
@@ -148,8 +148,8 @@ export async function startRepl(options: StartReplOptions) {
         try {
             const promptLabel =
                 approvalMode === "always-allow"
-                    ? "my-agent[always]> "
-                    : "my-agent[ask]> ";
+                    ? "yuan-agent[always]> "
+                    : "yuan-agent[ask]> ";
 
             line = await rl.question(promptLabel);
         } catch {

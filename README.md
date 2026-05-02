@@ -1,4 +1,4 @@
-# my-agent
+# yuan-agent
 
 一个基于 **Node.js + TypeScript** 的本地 CLI Agent。  
 它可以在命令行中使用大模型完成任务，并按需调用网页搜索、HTTP 抓取、网页正文提取以及本地工具。
@@ -30,8 +30,8 @@
 ## Installation
 
 ```bash
-git clone https://github.com/your-name/my-agent.git
-cd my-agent
+git clone https://github.com/your-name/yuan-agent.git
+cd yuan-agent
 npm install
 ```
 
@@ -81,11 +81,11 @@ npm run dev
 启动后你会看到：
 
 ```txt
-Welcome to my-agent!
+Welcome to yuan-agent!
 Type /help for commands, /exit to quit.
 Approval mode is shown in the prompt: [ask] or [always].
 
-my-agent[ask]>
+yuan-agent[ask]>
 ```
 
 ---
@@ -110,9 +110,9 @@ npm run start -- "帮我总结这个项目的功能"
 不传入 prompt 时，程序会进入 REPL 模式。你可以连续输入多轮指令，例如：
 
 ```txt
-my-agent[ask]> 帮我总结这个项目
-my-agent[ask]> 再简短一点
-my-agent[ask]> 输出成要点列表
+yuan-agent[ask]> 帮我总结这个项目
+yuan-agent[ask]> 再简短一点
+yuan-agent[ask]> 输出成要点列表
 ```
 
 支持的内置命令：
@@ -152,7 +152,7 @@ my-agent[ask]> 输出成要点列表
 如果选择 **总是允许**，当前会话后续的相关工具调用将自动通过，提示符也会变为：
 
 ```txt
-my-agent[always]>
+yuan-agent[always]>
 ```
 
 如需恢复逐次确认，可执行：
@@ -197,20 +197,20 @@ my-agent[always]>
 
 ```json
 "bin": {
-  "my-agent": "./dist/cli/main.js"
+  "yuan-agent": "./dist/cli/main.js"
 }
 ```
 
 构建并安装后，可以直接使用：
 
 ```bash
-my-agent
+yuan-agent
 ```
 
 或：
 
 ```bash
-my-agent "帮我搜索 AI 新闻"
+yuan-agent "帮我搜索 AI 新闻"
 ```
 
 ---
