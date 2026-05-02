@@ -74,12 +74,16 @@ export async function runLocalAgentLoop(
         input: userInput,
     });
 
+    const historyMessages = previousMessages.filter(
+        (message) => message.role !== "system",
+    );
+
     const messages: ChatMessage[] = [
         {
             role: "system",
             content: buildSystemPrompt(Array.from(tools.values())),
         },
-        ...previousMessages,
+        ...historyMessages,
         {
             role: "user",
             content: userInput,
