@@ -1,6 +1,7 @@
 # my-agent
 
-一个基于 **Node.js + TypeScript** 的本地 CLI Agent，支持模型调用、工具执行、网页搜索、HTTP 抓取与网页正文提取。
+一个基于 **Node.js + TypeScript** 的本地 CLI Agent。  
+它可以在命令行中使用大模型完成任务，并按需调用网页搜索、HTTP 抓取、网页正文提取以及本地工具。
 
 ## Features
 
@@ -8,22 +9,14 @@
 - 🧠 基于大模型的任务执行与推理
 - 🔧 可扩展的工具调用机制
 - 🌐 支持 Brave Search 网页搜索
-- 📄 支持 HTTP 页面抓取与正文提取
-- 💬 支持多轮会话处理
+- 📄 支持 HTTP 抓取与网页正文提取
+- 💬 支持多轮会话
+- 🖥️ 支持交互式 REPL
+- ✅ 支持工具执行前确认（approval）
+- ⌨️ 支持 `↑ / ↓ / Enter` 选择确认项
+- 🔁 支持会话级“总是允许”模式
 - 🔌 支持代理配置
 - 🛠️ 基于 TypeScript，便于二次开发
-
----
-
-## Tech Stack
-
-- Node.js
-- TypeScript
-- OpenAI-compatible API client
-- dotenv
-- jsdom
-- @mozilla/readability
-- zod
 
 ---
 
@@ -36,59 +29,165 @@
 
 ## Installation
 
-### 1. Clone the repository
-
 ```bash
 git clone https://github.com/your-name/my-agent.git
 cd my-agent
+npm install
 ```
 
-### 2. Install dependencies
+---
+
+## Quick Start
+
+### 1. 配置环境变量
+
+在项目根目录创建 `.env` 文件：
+
+```env
+MODEL_API_KEY=
+MODEL_BASE_URL=
+MODEL_NAME=
+
+BRAVE_SEARCH_API_KEY=
+
+HTTP_PROXY=
+HTTPS_PROXY=
+```
+
+最小可用配置通常只需要：
+
+```env
+MODEL_API_KEY=your_api_key
+MODEL_BASE_URL=https://api.openai.com/v1
+MODEL_NAME=gpt-4o-mini
+```
+
+---
+
+### 2. 开发模式运行
+
+#### 单次命令
 
 ```bash
-npm install
+npm run dev -- "帮我搜索 OpenAI 最新消息"
+```
+
+#### 交互式 REPL
+
+```bash
+npm run dev
+```
+
+启动后你会看到：
+
+```txt
+Welcome to my-agent!
+Type /help for commands, /exit to quit.
+Approval mode is shown in the prompt: [ask] or [always].
+
+my-agent[ask]>
+```
+
+---
+
+### 3. 编译后运行
+
+```bash
+npm run build
+npm run start
+```
+
+单次命令模式：
+
+```bash
+npm run start -- "帮我总结这个项目的功能"
+```
+
+---
+
+## REPL Usage
+
+不传入 prompt 时，程序会进入 REPL 模式。你可以连续输入多轮指令，例如：
+
+```txt
+my-agent[ask]> 帮我总结这个项目
+my-agent[ask]> 再简短一点
+my-agent[ask]> 输出成要点列表
+```
+
+支持的内置命令：
+
+```txt
+/help    显示帮助
+/exit    退出
+/quit    退出
+/clear   清空当前会话历史，并重置 approval 模式
+/save    保存当前会话
+/reset   将 approval 模式重置为 ask
+/status  查看当前会话状态
+```
+
+---
+
+## Approval / 工具执行确认
+
+某些工具调用在执行前需要你的确认，例如执行本地命令时：
+
+```txt
+我需要执行 `pwd` 命令来显示当前工作目录。是否允许执行？
+```
+
+此时可以使用：
+
+- `↑ / ↓`：切换选项
+- `Enter`：确认
+- `Ctrl+C`：拒绝
+
+可选项包括：
+
+- **不允许**
+- **允许**
+- **总是允许**
+
+如果选择 **总是允许**，当前会话后续的相关工具调用将自动通过，提示符也会变为：
+
+```txt
+my-agent[always]>
+```
+
+如需恢复逐次确认，可执行：
+
+```txt
+/reset
 ```
 
 ---
 
 ## Scripts
 
-```bash
-npm run dev
-npm run build
-npm run start
-npm run check
+```json
+{
+  "scripts": {
+    "dev": "tsx src/cli/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli/main.js",
+    "check": "tsc --noEmit"
+  }
+}
 ```
 
-### Script description
+### 脚本说明
 
 - `npm run dev`：开发模式运行源码
 - `npm run build`：编译到 `dist/`
 - `npm run start`：运行编译后的 CLI
 - `npm run check`：执行 TypeScript 类型检查
 
----
+说明：
 
-## Quick Start
-
-### 开发模式运行
-
-```bash
-node --env-file=.env --import=tsx src/cli/main.ts "帮我搜索 OpenAI 最新消息"
-```
-
-或者：
-
-```bash
-npm run dev -- "帮我搜索 OpenAI 最新消息"
-```
-
-### 编译后运行
-
-```bash
-npm run build
-node --env-file=.env dist/cli/main.js "帮我搜索 OpenAI 最新消息"
-```
+- `npm run dev` / `npm run start`
+    - 不传参数：进入 REPL
+    - 传入参数：执行单次命令
 
 ---
 
@@ -105,85 +204,52 @@ node --env-file=.env dist/cli/main.js "帮我搜索 OpenAI 最新消息"
 构建并安装后，可以直接使用：
 
 ```bash
-my-agent "帮我搜索 OpenAI 最新消息"
+my-agent
+```
+
+或：
+
+```bash
+my-agent "帮我搜索 AI 新闻"
 ```
 
 ---
 
 ## Environment Variables
 
-请在项目根目录创建 `.env` 文件。
-
-### 推荐配置
-
-```env
-# ===== Model Provider (recommended) =====
-MODEL_API_KEY=
-MODEL_BASE_URL=
-MODEL_NAME=
-
-# ===== Web Search =====
-BRAVE_SEARCH_API_KEY=
-
-# ===== Optional Proxy =====
-HTTP_PROXY=
-HTTPS_PROXY=
-```
-
----
-
-## Model Configuration
-
-项目使用 **OpenAI-compatible API**，模型配置按以下优先级读取：
+项目使用 **OpenAI-compatible API**，按以下优先级读取配置：
 
 ### API Key
+
 1. `MODEL_API_KEY`
 2. `OPENAI_API_KEY`
 
 ### Base URL
+
 1. `MODEL_BASE_URL`
 2. `OPENAI_BASE_URL`
 
 ### Model Name
+
 1. `MODEL_NAME`
 2. `OPENAI_MODEL`
 3. 默认值：`gpt-4o-mini`
 
-### 示例
-
-```env
-MODEL_API_KEY=your_api_key
-MODEL_BASE_URL=https://api.openai.com/v1
-MODEL_NAME=gpt-4o-mini
-```
-
-如果你使用兼容 OpenAI API 的第三方服务，也可以这样配置：
-
-```env
-MODEL_API_KEY=your_api_key
-MODEL_BASE_URL=https://your-provider.example.com/v1
-MODEL_NAME=your-model-name
-```
-
----
-
-## OpenAI-style Compatible Variables
+### OpenAI 风格兼容变量
 
 如果你更习惯 OpenAI 风格变量名，也可以使用：
 
 ```env
-OPENAI_API_KEY=your_api_key
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+OPENAI_MODEL=
 ```
-
-项目会自动兼容这些变量名。
 
 ---
 
-## Web Search Configuration
+## Web Search
 
-如果希望启用网页搜索工具，请配置：
+如果你希望启用网页搜索工具，请配置：
 
 ```env
 BRAVE_SEARCH_API_KEY=your_brave_search_api_key
@@ -193,16 +259,16 @@ BRAVE_SEARCH_API_KEY=your_brave_search_api_key
 
 ---
 
-## Proxy Configuration
+## Proxy
 
-如果你的网络环境需要代理访问外部服务，可以配置：
+如需通过代理访问模型服务或外部网站，可以配置：
 
 ```env
 HTTP_PROXY=http://127.0.0.1:33210
 HTTPS_PROXY=http://127.0.0.1:33210
 ```
 
-项目启动时会自动读取以下任意变量：
+程序会自动读取以下变量：
 
 - `HTTP_PROXY`
 - `HTTPS_PROXY`
@@ -213,44 +279,62 @@ HTTPS_PROXY=http://127.0.0.1:33210
 
 ## Recommended `.env.example`
 
-建议在仓库中提供 `.env.example`：
+建议在仓库中提供如下 `.env.example`：
 
 ```env
-# ===== Model Provider =====
+# =========================
+# 模型服务配置（推荐）
+# =========================
+
 MODEL_API_KEY=
 MODEL_BASE_URL=
 MODEL_NAME=
 
-# ===== OpenAI-style fallback variables (optional) =====
+# =========================
+# OpenAI 风格兼容变量（可选）
+# =========================
+
 OPENAI_API_KEY=
 OPENAI_BASE_URL=
 OPENAI_MODEL=
 
-# ===== Brave Search =====
+# =========================
+# 网页搜索配置
+# =========================
+
 BRAVE_SEARCH_API_KEY=
 
-# ===== Proxy =====
+# =========================
+# 代理配置（可选）
+# =========================
+
 HTTP_PROXY=
 HTTPS_PROXY=
 ```
 
 ---
 
-## Example Usage
+## Examples
 
-### 1. 普通问答
+### 普通问答
 
 ```bash
 npm run dev -- "帮我总结这个项目的功能"
 ```
 
-### 2. 搜索最新消息
+### 搜索最新消息
 
 ```bash
 npm run dev -- "帮我搜索 OpenAI 最新消息"
 ```
 
-### 3. 编译后运行
+### 进入 REPL
+
+```bash
+npm run dev
+```
+
+### 编译后运行
 
 ```bash
 npm run build
@@ -259,44 +343,11 @@ npm run start -- "帮我搜索 AI 新闻"
 
 ---
 
-## How It Works
-
-项目大致执行流程如下：
-
-1. 从 CLI 接收用户输入
-2. 加载环境变量
-3. 初始化代理设置
-4. 创建工具注册表
-5. 创建 OpenAI-compatible 模型客户端
-6. 进入 agent loop
-7. 按需调用工具，例如：
-    - `web_search`
-    - `http_fetch`
-    - 网页正文提取
-8. 输出最终结果
-
----
-
-## Search Notes
-
-当配置了 `BRAVE_SEARCH_API_KEY` 时，项目可以启用 `web_search` 工具。  
-如果未配置，项目可能退化为通过 HTTP 抓取网页内容来回答问题。
-
-请注意：
-
-- 某些网站可能返回 `403 Forbidden`
-- 某些站点会启用 Cloudflare challenge
-- 对于“最新消息”类问题，优先使用搜索 API 通常更稳定
-
----
-
 ## Troubleshooting
 
 ### `Missing MODEL_API_KEY / OPENAI_API_KEY in environment variables.`
 
-说明模型 API Key 未配置。
-
-请在 `.env` 中至少配置其一：
+说明模型 API Key 未配置。请至少设置其一：
 
 ```env
 MODEL_API_KEY=your_api_key
@@ -312,9 +363,7 @@ OPENAI_API_KEY=your_api_key
 
 ### `web_search disabled: set BRAVE_SEARCH_API_KEY`
 
-说明没有配置 Brave Search API Key。
-
-请添加：
+说明未配置 Brave Search API Key。请添加：
 
 ```env
 BRAVE_SEARCH_API_KEY=your_key
@@ -358,33 +407,16 @@ dist/cli/main.js
 
 ## Development
 
-### Type check
-
 ```bash
 npm run check
+npm run dev
 ```
-
-### Run in dev mode
-
-```bash
-npm run dev -- "你好"
-```
-
----
-
-## Suggested Project Files
-
-建议在仓库中包含以下文件：
-
-- `README.md`
-- `.env.example`
-- `.gitignore`
-- `LICENSE`
 
 ---
 
 ## Roadmap
 
+- [ ] 优化 approval 菜单显示体验
 - [ ] 增强搜索结果验证能力
 - [ ] 优化网页正文提取效果
 - [ ] 增加更多内置工具
@@ -399,34 +431,8 @@ npm run dev -- "你好"
 MIT
 ```
 
----
 
-# 你还应该补两个文件
-
-## 1) `.env.example`
-
-```env
-# ===== Model Provider =====
-MODEL_API_KEY=
-MODEL_BASE_URL=
-MODEL_NAME=
-
-# ===== OpenAI-style fallback variables (optional) =====
-OPENAI_API_KEY=
-OPENAI_BASE_URL=
-OPENAI_MODEL=
-
-# ===== Brave Search =====
-BRAVE_SEARCH_API_KEY=
-
-# ===== Proxy =====
-HTTP_PROXY=
-HTTPS_PROXY=
-```
-
----
-
-## 2) `.gitignore`
+## `.gitignore`
 
 ```gitignore
 node_modules
