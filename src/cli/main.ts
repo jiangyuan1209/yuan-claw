@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import "dotenv/config";
 import { select, cancel, isCancel } from "@clack/prompts";
 import { initGlobalProxy } from "../lib/initGlobalProxy.js";
 import type { ChatMessage } from "../memory/types.js";

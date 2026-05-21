@@ -23,6 +23,12 @@ const DEFAULT_ALLOW_PREFIXES = [
     "npm",
     "node",
     "git",
+    "python3",
+    "python",
+    "pdftotext",
+    "pdfplumber",
+    "qpdf",
+    "pandoc",
 ];
 
 export function validateShellCommand(command: string) {

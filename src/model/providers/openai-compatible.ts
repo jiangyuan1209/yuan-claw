@@ -14,22 +14,16 @@ export function createOpenAICompatibleClient(
 
     const apiKey =
         config.MODEL_API_KEY ??
-        config.OPENAI_API_KEY ??
-        process.env.MODEL_API_KEY ??
-        process.env.OPENAI_API_KEY;
+        config.OPENAI_API_KEY;
 
     const baseURL =
         config.MODEL_BASE_URL ??
-        config.OPENAI_BASE_URL ??
-        process.env.MODEL_BASE_URL ??
-        process.env.OPENAI_BASE_URL;
+        config.OPENAI_BASE_URL;
 
     const model =
         options.model ??
         config.MODEL_NAME ??
         config.OPENAI_MODEL ??
-        process.env.MODEL_NAME ??
-        process.env.OPENAI_MODEL ??
         "gpt-4o-mini";
 
     if (!apiKey) {
