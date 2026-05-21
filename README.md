@@ -15,7 +15,8 @@
 - 🖥️ 支持交互式 REPL
 - ✅ 支持工具执行前确认（approval）
 - ⌨️ 支持 `↑ / ↓ / Enter` 选择确认项
-- 🔁 支持会话级“总是允许”模式
+- 🔁 支持会话级”总是允许”模式
+- 📦 支持本地 Skill 插件扩展能力
 - 🔌 支持代理配置
 - 🛠️ 基于 TypeScript，便于二次开发
 
@@ -386,6 +387,98 @@ npm run start
 - `HTTPS_PROXY`
 - `http_proxy`
 - `https_proxy`
+
+---
+
+## Skills / 本地插件扩展
+
+yuan-claw 支持通过本地 Skill（技能）文件扩展 Agent 的能力。Skill 是存放在固定目录下的 Markdown 文件，Agent 会在运行时根据用户输入自动匹配并加载相关 Skill 的提示词，从而获得领域知识或操作指引。
+
+### Skill 目录结构
+
+所有 Skill 文件存放在：
+
+```bash
+~/.yuan-claw/skills/
+```
+
+每个 Skill 是一个子目录，其中必须包含一个 `SKILL.md` 文件：
+
+```
+~/.yuan-claw/skills/
+├── pdf/
+│   └── SKILL.md
+├── frontend-design/
+│   └── SKILL.md
+└── my-skill/
+    └── SKILL.md
+```
+
+### SKILL.md 文件格式
+
+`SKILL.md` 使用 YAML frontmatter + Markdown body 的格式：
+
+```markdown
+---
+name: pdf
+description: PDF 文件处理技能，支持提取文本、表格、OCR 等
+tags: [pdf, document, ocr]
+license: MIT
+version: 1.0.0
+---
+
+## 使用指南
+
+当用户需要处理 PDF 文件时：
+1. 使用 pdfplumber 提取文本...
+2. 对于扫描件，使用 OCR...
+```
+
+Frontmatter 字段说明：
+
+- `name`（可选）：Skill 名称，用于匹配和展示。未填写时使用目录名
+- `description`（可选）：简短描述，用于匹配和展示
+- `tags`（可选）：标签数组，用于关键词匹配
+- `license`（可选）：许可证
+- `version`（可选）：版本号
+
+Markdown body 是 Skill 的实际提示词内容，会被注入到 system prompt 中指导 Agent 行为。
+
+### 匹配机制
+
+Agent 会根据用户输入自动匹配最相关的 Skill（最多匹配 3 个），匹配依据包括：
+
+- 用户输入中是否包含 Skill 名称
+- 用户输入中是否包含 Skill 的标签
+- 用户输入分词后与 Skill 描述的关键词重合度
+
+匹配到的 Skill 内容会被组装到 system prompt 中，指导 Agent 使用相应的知识和流程。
+
+### 添加自定义 Skill
+
+1. 在 `~/.yuan-claw/skills/` 下创建新目录：
+
+```bash
+mkdir -p ~/.yuan-claw/skills/my-skill
+```
+
+2. 创建 `SKILL.md` 文件：
+
+```bash
+cat > ~/.yuan-claw/skills/my-skill/SKILL.md << 'EOF'
+---
+name: my-skill
+description: 我的自定义技能
+tags: [custom]
+---
+
+当用户问到 XXX 时，请按以下步骤操作：
+1. ...
+2. ...
+EOF
+```
+
+3. 下次运行 `yuan-claw` 时，该 Skill 会被自动发现和加载。
 
 ---
 
