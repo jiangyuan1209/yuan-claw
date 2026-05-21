@@ -1,3 +1,5 @@
+import path from "node:path";
+
 const DEFAULT_DENY_PATTERNS = [
     /\brm\s+-rf\s+\//i,
     /\bsudo\b/i,
@@ -25,10 +27,12 @@ const DEFAULT_ALLOW_PREFIXES = [
     "git",
     "python3",
     "python",
+    "pip3",
+    "pip",
     "pdftotext",
-    "pdfplumber",
     "qpdf",
     "pandoc",
+    "which",
 ];
 
 export function validateShellCommand(command: string) {
@@ -46,7 +50,12 @@ export function validateShellCommand(command: string) {
 
     const firstToken = trimmed.split(/\s+/)[0];
 
-    if (!DEFAULT_ALLOW_PREFIXES.includes(firstToken)) {
+    // Also allow absolute paths ending with known commands (e.g. /usr/bin/python3)
+    const commandName = firstToken.includes(path.sep)
+        ? path.basename(firstToken)
+        : firstToken;
+
+    if (!DEFAULT_ALLOW_PREFIXES.includes(commandName)) {
         throw new Error(
             `Shell command not allowed by policy. Command prefix: ${firstToken}`
         );
