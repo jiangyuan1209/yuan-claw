@@ -4,6 +4,7 @@ import type { EventBus } from "../events/event-bus.js";
 import { buildSystemPrompt } from "./build-system-prompt.js";
 import { parseAgentResponse } from "./parse-agent-response.js";
 import type { ApprovalDecision } from "./read-approval.js";
+import { SkillsRuntime } from "../skills/runtime.js";
 
 type ModelClient = {
     generate: (messages: ChatMessage[]) => Promise<string>;
@@ -74,6 +75,11 @@ export async function runLocalAgentLoop(
         input: userInput,
     });
 
+    // Load and match skills based on user input
+    const skillsRuntime = new SkillsRuntime();
+    await skillsRuntime.reload();
+    const skillsPrompt = skillsRuntime.buildPromptForInput(userInput);
+
     const historyMessages = previousMessages.filter(
         (message) => message.role !== "system",
     );
@@ -81,7 +87,7 @@ export async function runLocalAgentLoop(
     const messages: ChatMessage[] = [
         {
             role: "system",
-            content: buildSystemPrompt(Array.from(tools.values())),
+            content: buildSystemPrompt(Array.from(tools.values()), skillsPrompt),
         },
         ...historyMessages,
         {

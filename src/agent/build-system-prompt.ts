@@ -13,7 +13,11 @@ function formatToolsForPrompt(tools: Tool[]): string {
         .join("\n");
 }
 
-export function buildSystemPrompt(tools: Tool[]): string {
+export function buildSystemPrompt(tools: Tool[], skillsPrompt?: string): string {
+    const skillsSection = skillsPrompt
+        ? ["", "LOCAL SKILLS:", skillsPrompt].join("\n")
+        : "";
+
     return [
         "You are a local CLI coding agent.",
         "You do not have direct filesystem, shell, git, or network access unless you use the provided tools.",
@@ -41,6 +45,7 @@ export function buildSystemPrompt(tools: Tool[]): string {
         "",
         "AVAILABLE TOOLS:",
         formatToolsForPrompt(tools),
+        skillsSection,
         "",
         "Examples:",
         '{"type":"tool_call","toolName":"read_file","args":{"path":"package.json"}}',
