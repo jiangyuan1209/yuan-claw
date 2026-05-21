@@ -16,7 +16,7 @@ export function createOpenAICompatibleClient(
 
     const baseURL = config.MODEL_BASE_URL
 
-    const model = config.MODEL_NAME
+    const model = config.MODEL_NAME ?? "gpt-4o-mini"
 
     if (!apiKey) {
         throw new Error(
