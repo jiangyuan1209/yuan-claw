@@ -5,6 +5,12 @@ export function resolveWorkspaceRoot(workspaceRoot?: string) {
 }
 
 export function resolveSafePath(workspaceRoot: string, targetPath: string) {
+    // If the target is an absolute path, allow reading it directly (anywhere on disk)
+    if (path.isAbsolute(targetPath)) {
+        return path.resolve(targetPath);
+    }
+
+    // Relative paths are resolved against the workspace root
     const root = path.resolve(workspaceRoot);
     const fullPath = path.resolve(root, targetPath);
 
