@@ -15,7 +15,7 @@ import {
     createHttpFetchTool,
     createWebSearchTool,
     createExtractReadableTextTool,
-    createBraveSearchProvider,
+    createBaiduSearchProvider,
 } from "./web/index.js";
 
 type CreateToolRegistryOptions = {
@@ -40,24 +40,20 @@ export function createToolRegistry(
 
     const config = options.config ?? {};
 
-    const braveApiKey =
-        config.BRAVE_SEARCH_API_KEY ??
-        config.BRAVE_API_KEY ??
-        process.env.BRAVE_SEARCH_API_KEY ??
-        process.env.BRAVE_API_KEY;
+    const baiduApiKey = config.BAIDU_API_KEY;
 
-    if (braveApiKey) {
+    if (baiduApiKey) {
         tools.push(
             createWebSearchTool({
-                provider: createBraveSearchProvider({
-                    apiKey: braveApiKey,
+                provider: createBaiduSearchProvider({
+                    apiKey: baiduApiKey,
                 }),
             })
         );
-        console.warn("[tools] web_search enabled via Brave Search API");
+        console.warn("[tools] web_search enabled via Baidu Search API");
     } else {
         console.warn(
-            "[tools] web_search disabled: set BRAVE_SEARCH_API_KEY or BRAVE_API_KEY"
+            "[tools] web_search disabled: set BAIDU_API_KEY in settings.json"
         );
     }
 

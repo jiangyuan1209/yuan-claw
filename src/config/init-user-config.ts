@@ -8,8 +8,7 @@ const DEFAULT_SETTINGS = {
     OPENAI_API_KEY: "",
     OPENAI_BASE_URL: "",
     OPENAI_MODEL: "",
-    BRAVE_SEARCH_API_KEY: "",
-    BRAVE_API_KEY: "",
+    BAIDU_API_KEY: "",
     HTTP_PROXY: "",
     HTTPS_PROXY: "",
 };
