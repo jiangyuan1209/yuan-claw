@@ -11,8 +11,7 @@ const userSettingsSchema = z.object({
     OPENAI_BASE_URL: z.string().optional(),
     OPENAI_MODEL: z.string().optional(),
 
-    BRAVE_SEARCH_API_KEY: z.string().optional(),
-    BRAVE_API_KEY: z.string().optional(),
+    BAIDU_API_KEY: z.string().optional(),
 
     HTTP_PROXY: z.string().optional(),
     HTTPS_PROXY: z.string().optional(),

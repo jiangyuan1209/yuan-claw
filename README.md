@@ -124,7 +124,7 @@ yuan-claw
   "MODEL_API_KEY": "your_api_key",
   "MODEL_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "MODEL_NAME": "qwen3-max-2026-01-23",
-  "BRAVE_SEARCH_API_KEY": "your_brave_search_api_key",
+  "BAIDU_API_KEY": "your_baidu_search_api_key",
   "HTTP_PROXY": "http://127.0.0.1:33210",
   "HTTPS_PROXY": "http://127.0.0.1:33210"
 }
@@ -144,7 +144,7 @@ yuan-claw
 
 ```json
 {
-  "BRAVE_SEARCH_API_KEY": "your_brave_search_api_key"
+  "BAIDU_API_KEY": "your_baidu_search_api_key"
 }
 ```
 
@@ -197,7 +197,7 @@ yuan-claw "帮我搜索 OpenAI 最新消息"
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`
 - `OPENAI_MODEL`
-- `BRAVE_SEARCH_API_KEY`
+- `BAIDU_API_KEY`
 - `HTTP_PROXY`
 - `HTTPS_PROXY`
 - `http_proxy`
@@ -222,7 +222,7 @@ yuan-claw "帮我搜索 OpenAI 最新消息"
   "MODEL_API_KEY": "your_dashscope_api_key",
   "MODEL_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "MODEL_NAME": "qwen3-max-2026-01-23",
-  "BRAVE_SEARCH_API_KEY": "your_brave_search_api_key",
+  "BAIDU_API_KEY": "your_baidu_search_api_key",
   "HTTP_PROXY": "http://127.0.0.1:33210",
   "HTTPS_PROXY": "http://127.0.0.1:33210"
 }
@@ -230,28 +230,11 @@ yuan-claw "帮我搜索 OpenAI 最新消息"
 
 ---
 
-## Environment Variables（兼容方式）
+## Environment Variables（已废弃）
 
-除了 `~/.yuan-claw/settings.json` 外，开发者也可以在项目根目录通过 `.env` 配置：
+项目已不再通过 `.env` 加载配置，所有配置均通过 `~/.yuan-claw/settings.json` 管理。
 
-```env
-MODEL_API_KEY=
-MODEL_BASE_URL=
-MODEL_NAME=
-
-BRAVE_SEARCH_API_KEY=
-
-HTTP_PROXY=
-HTTPS_PROXY=
-```
-
-也支持 OpenAI 风格变量名：
-
-```env
-OPENAI_API_KEY=
-OPENAI_BASE_URL=
-OPENAI_MODEL=
-```
+如果你仍习惯使用 `.env`，可以自行在项目中通过 `dotenv` 加载，但不再推荐。
 
 > 普通 CLI 用户更推荐使用：
 >
@@ -362,7 +345,7 @@ npm run start
 
 ```json
 {
-  "BRAVE_SEARCH_API_KEY": "your_brave_search_api_key"
+  "BAIDU_API_KEY": "your_baidu_search_api_key"
 }
 ```
 
@@ -587,13 +570,13 @@ yuan-claw
 
 ---
 
-### `web_search disabled: set BRAVE_SEARCH_API_KEY`
+### `web_search disabled: set BAIDU_API_KEY`
 
-说明未配置 Brave Search API Key。请添加：
+说明未配置百度搜索 API Key。请添加：
 
 ```json
 {
-  "BRAVE_SEARCH_API_KEY": "your_brave_search_api_key"
+  "BAIDU_API_KEY": "your_baidu_search_api_key"
 }
 ```
 
