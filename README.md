@@ -554,11 +554,9 @@ yuan-claw
 
 ### `Missing MODEL_API_KEY / OPENAI_API_KEY in environment variables.`
 
-说明模型 API Key 尚未正确配置。请至少在以下任一位置填写：
+说明模型 API Key 尚未正确配置。请在以下位置填写：
 
 - `~/.yuan-claw/settings.json`
-- 系统环境变量
-- 项目根目录 `.env`
 
 例如：
 
