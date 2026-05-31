@@ -43,3 +43,7 @@ dist
 *.log
 
 .package-lock.json
+
+docs
+
+demos

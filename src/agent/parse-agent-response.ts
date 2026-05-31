@@ -1,3 +1,21 @@
+/**
+ * 解析 Agent 响应
+ * ============================================================
+ * JSON Prompting 模式：
+ *   LLM 输出: {"type":"tool_call","toolName":"read_file","args":{...}}
+ *   本地用 JSON.parse + 字段校验 解析
+ *
+ * Function Calling 模式（无需此解析器）：
+ *   LLM 返回 response.choices[0].message.tool_calls
+ *   SDK 已保证格式，直接提取即可：
+ *   const toolCall = choice.message.tool_calls[0];
+ *   return {
+ *       type: "tool_call",
+ *       toolName: toolCall.function.name,
+ *       args: JSON.parse(toolCall.function.arguments),
+ *   };
+ * ============================================================
+ */
 import type { AgentResponse } from "./protocol.js";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
