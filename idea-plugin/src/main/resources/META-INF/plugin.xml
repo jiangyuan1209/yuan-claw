@@ -29,8 +29,9 @@
                 class="com.jiangyuan.yuanclaw.YuanClawAction"
                 text="Run Yuan-Claw"
                 description="Execute the yuan-claw command in the terminal"
-                icon="YuanClawIcons.Toolbar">
-            <add-to-group group-id="MainToolBar" anchor="last"/>
+                icon="/icons/yuan-claw.svg">
+            <add-to-group group-id="ToolbarRunGroup" anchor="last"/>
+            <add-to-group group-id="ToolsMenu" anchor="first"/>
             <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt Y"/>
         </action>
     </actions>
