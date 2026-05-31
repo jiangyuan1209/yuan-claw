@@ -5,6 +5,12 @@ node_modules/
 dist/
 build/
 
+# idea-plugin build artifacts
+idea-plugin/.gradle/
+idea-plugin/.intellijPlatform/
+idea-plugin/.kotlin/
+idea-plugin/build/
+
 # logs
 *.log
 npm-debug.log*
