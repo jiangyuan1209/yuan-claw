@@ -465,6 +465,35 @@ EOF
 
 ---
 
+## IntelliJ IDEA / WebStorm 插件
+
+yuan-claw 提供了 JetBrains IDE 插件，可在 IDE 内一键启动 CLI，无需切换终端。
+
+### 安装
+
+1. 下载插件：`idea-plugin/build/distributions/yuan-claw-plugin-1.0.0.zip`
+   （或从 [Releases](https://github.com/your-name/yuan-claw/releases) 获取）
+2. 打开 IDE → `Settings` → `Plugins` → `⚙️ 齿轮图标` → `Install Plugin from Disk`
+3. 选择 zip 文件，安装完成后 **重启 IDE**
+
+### 使用
+
+- **顶部菜单栏**：`Tools` → `Run Yuan-Claw`
+- **快捷键**：`Ctrl + Alt + Y`（macOS: `⌃⌥Y`）
+
+点击后会在 IDE 底部终端窗口打开一个名为 `yuan-claw` 的标签页，并在项目根目录下自动执行 `yuan-claw` 命令。
+
+### 从源码构建
+
+```bash
+cd idea-plugin
+./gradlew buildPlugin
+```
+
+构建产物：`build/distributions/yuan-claw-plugin-1.0.0.zip`
+
+---
+
 ## Scripts
 
 ```json
