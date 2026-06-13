@@ -21,7 +21,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/cli/main.js",
     "check": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "publish:npm": "./publish-npm.sh",
+    "publish:gh": "./publish-gh.sh"
   },
   "engines": {
     "node": ">=20"
