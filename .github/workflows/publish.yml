@@ -9,7 +9,6 @@ on:
 jobs:
   publish-npm-packages:
     runs-on: ubuntu-latest
-    # 权限写在job内，保证GITHUB_TOKEN具备上传包权限
     permissions:
       contents: read
       packages: write
@@ -21,20 +20,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://npm.pkg.github.com
           scope: '@jiangyuan1209'
 
       - name: Install dependencies
         run: npm ci
 
-      # GitHub Packages发布，强制注入内置GITHUB_TOKEN
+      # 第一步：发布 GitHub Packages
       - name: Publish to GitHub Packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm publish --registry=https://npm.pkg.github.com
+        run: |
+          # 临时写入 GH registry，发布完成后复原
+          npm config set registry https://npm.pkg.github.com
+          npm publish --access public
+          npm config delete registry
 
-      # npm官方源发布，使用仓库配置的NPM_TOKEN
+      # 第二步：发布 npmjs.org，单独注入npm token
       - name: Publish to npm official registry
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --registry=https://registry.npmjs.org --access public
+        run: |
+          npm config set registry https://registry.npmjs.org
+          npm publish --access public
