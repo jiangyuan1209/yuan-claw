@@ -1,3 +1,11 @@
+# 完整优化后 README.md 全文
+修改要点：
+1. 重写安装模块，区分 npm 官方（普通用户首选）、GitHub Packages（内测灰度）、源码构建三种渠道，补齐 GH 包安装前置配置与报错解决方案；
+2. 全文所有 `your-name` 占位符替换为真实用户名 `jiangyuan1209`；
+3. Troubleshooting 新增 GitHub Packages 安装404排错章节；
+4. 排版分层更清晰，普通用户优先看到最简单的 npm 安装方式；
+5. 统一版本命令，补充场景说明，降低新手疑问。
+
 ```md
 # yuan-claw
 
@@ -30,56 +38,75 @@
 ---
 
 ## Installation
+提供三种安装渠道，按需选择：
+1. **npm 官方仓库（推荐普通用户）**：全网公开，无任何额外配置，稳定正式版；
+2. **GitHub Packages 仓库（内测/灰度专用）**：存放流水线自动发布的测试新版本，必须配置源才能安装；
+3. **源码本地构建（开发者/二次开发）**：适合自定义修改源码场景。
 
-### 方式一：通过 npm 全局安装（推荐）
-
+### 方式一：npm 官方仓库（推荐普通用户）
+全局安装后可在终端直接调用 `yuan-claw` 命令
 ```bash
+# 安装最新稳定正式版
 npm install -g @jiangyuan1209/yuan-claw
+
+# 安装指定固定版本
+npm install -g @jiangyuan1209/yuan-claw@0.1.14
+
+# 升级到最新版本
+npm install -g @jiangyuan1209/yuan-claw@latest
+
+# 卸载工具
+npm uninstall -g @jiangyuan1209/yuan-claw
 ```
 
-安装完成后可直接使用：
-
+安装完成后直接启动：
 ```bash
 yuan-claw
 ```
 
-卸载命令：
-
+### 方式二：GitHub Packages 仓库（内测灰度新版本）
+> 注意：未配置源会直接报 404 Not Found，必须先执行下面配置步骤
+#### 前置配置（仅需执行一次，全局生效）
 ```bash
+npm config set @jiangyuan1209:registry https://npm.pkg.github.com
+```
+如果你只想在当前项目生效，在项目根目录新建 `.npmrc` 文件写入：
+```ini
+@jiangyuan1209:registry=https://npm.pkg.github.com
+```
+
+#### 全局安装内测包
+```bash
+# 安装最新内测版
+npm install -g @jiangyuan1209/yuan-claw
+
+# 指定版本安装
+npm install -g @jiangyuan1209/yuan-claw@0.1.14
+
+# 升级内测包
+npm install -g @jiangyuan1209/yuan-claw@latest
+
+# 卸载（和npm官方包卸载命令完全一致）
 npm uninstall -g @jiangyuan1209/yuan-claw
 ```
 
-如需安装指定版本：
-
+### 方式三：从源码本地构建（开发/二次开发）
 ```bash
-npm install -g @jiangyuan1209/yuan-claw@0.1.2
-```
-
-升级到最新版：
-
-```bash
-npm install -g @jiangyuan1209/yuan-claw@latest
-```
-
----
-
-### 方式二：从源码安装
-
-```bash
-git clone https://github.com/your-name/yuan-claw.git
+# 克隆官方仓库
+git clone https://github.com/jiangyuan1209/yuan-claw.git
 cd yuan-claw
+# 安装项目依赖
 npm install
+# 编译TypeScript产物至dist目录
 npm run build
 ```
 
-源码模式下运行：
-
+#### 源码模式运行
+开发热更新模式（实时修改生效）：
 ```bash
 npm run dev
 ```
-
-或：
-
+编译后生产模式运行：
 ```bash
 npm run start
 ```
@@ -117,7 +144,7 @@ yuan-claw
 
 ### 2. 编辑 `~/.yuan-claw/settings.json`
 
-示例：
+完整配置示例：
 
 ```json
 {
@@ -130,8 +157,7 @@ yuan-claw
 }
 ```
 
-最小可用配置通常只需要：
-
+最小可用配置（仅基础大模型对话）：
 ```json
 {
   "MODEL_API_KEY": "your_api_key",
@@ -140,16 +166,14 @@ yuan-claw
 }
 ```
 
-如果你希望启用网页搜索，还可以配置：
-
+如需启用网页搜索，补充百度搜索密钥：
 ```json
 {
   "BAIDU_API_KEY": "your_baidu_search_api_key"
 }
 ```
 
-如需使用代理，可以配置：
-
+如需网络代理，补充代理地址：
 ```json
 {
   "HTTP_PROXY": "http://127.0.0.1:33210",
@@ -157,8 +181,7 @@ yuan-claw
 }
 ```
 
-保存后，重新执行：
-
+保存配置文件后，重新执行命令启动：
 ```bash
 yuan-claw
 ```
@@ -167,14 +190,12 @@ yuan-claw
 
 ### 3. 开始使用
 
-#### 交互式 REPL
-
+#### 交互式 REPL 多轮对话
 ```bash
 yuan-claw
 ```
 
-#### 单次命令
-
+#### 单次指令一次性执行
 ```bash
 yuan-claw "帮我搜索 OpenAI 最新消息"
 ```
@@ -183,14 +204,12 @@ yuan-claw "帮我搜索 OpenAI 最新消息"
 
 ## Configuration
 
-项目优先从用户目录中的配置文件读取配置：
-
+项目固定读取用户目录全局配置文件：
 ```bash
 ~/.yuan-claw/settings.json
 ```
 
-### 支持的配置项
-
+### 支持的全部配置项
 - `MODEL_API_KEY`
 - `MODEL_BASE_URL`
 - `MODEL_NAME`
@@ -203,10 +222,8 @@ yuan-claw "帮我搜索 OpenAI 最新消息"
 - `http_proxy`
 - `https_proxy`
 
-### 推荐配置示例
-
-#### OpenAI-compatible 通用配置
-
+### 推荐配置模板
+#### OpenAI 兼容接口通用模板
 ```json
 {
   "MODEL_API_KEY": "your_api_key",
@@ -215,8 +232,7 @@ yuan-claw "帮我搜索 OpenAI 最新消息"
 }
 ```
 
-#### DashScope 示例
-
+#### 阿里通义千问 DashScope 模板
 ```json
 {
   "MODEL_API_KEY": "your_dashscope_api_key",
@@ -232,72 +248,58 @@ yuan-claw "帮我搜索 OpenAI 最新消息"
 
 ## Environment Variables（已废弃）
 
-项目已不再通过 `.env` 加载配置，所有配置均通过 `~/.yuan-claw/settings.json` 管理。
+项目已不再通过 `.env` 加载配置，所有运行配置统一由 `~/.yuan-claw/settings.json` 管理。
 
-如果你仍习惯使用 `.env`，可以自行在项目中通过 `dotenv` 加载，但不再推荐。
+如果你仍习惯使用 `.env` 文件，仅源码开发调试场景可自行引入 dotenv，普通 CLI 用户不推荐。
 
-> 普通 CLI 用户更推荐使用：
->
+> 普通终端用户标准配置方式：
 > ```bash
 > ~/.yuan-claw/settings.json
 > ```
->
-> `.env` 更适合源码开发或本地调试。
+> `.env` 仅适用于本地源码开发调试。
 
 ---
 
 ## REPL Usage
 
-不传入 prompt 时，程序会进入 REPL 模式。你可以连续输入多轮指令，例如：
-
+不传入指令参数时，程序自动进入交互式 REPL 模式，支持连续多轮对话：
 ```txt
 yuan-claw[ask]> 帮我总结这个项目
-yuan-claw[ask]> 再简短一点
-yuan-claw[ask]> 输出成要点列表
+yuan-claw[ask]> 再精简输出
+yuan-claw[ask]> 整理成要点清单
 ```
 
-支持的内置命令：
-
+内置快捷命令：
 ```txt
-/help    显示帮助
-/exit    退出
-/quit    退出
-/clear   清空当前会话历史，并重置 approval 模式
-/save    保存当前会话
-/reset   将 approval 模式重置为 ask
-/status  查看当前会话状态
+/help    展示全部内置命令帮助
+/exit    退出REPL终端
+/quit    退出REPL终端
+/clear   清空当前会话历史，重置工具确认模式
+/save    持久保存当前完整会话记录
+/reset   将工具确认模式恢复为逐次询问
+/status  查看当前会话状态、权限模式
 ```
 
 ---
 
-## Approval / 工具执行确认
+## Approval / 工具执行权限确认
 
-某些工具调用在执行前需要你的确认，例如执行本地命令时：
-
+部分高危本地工具执行前会弹出确认弹窗（例如终端命令读写文件）：
 ```txt
-我需要执行 `pwd` 命令来显示当前工作目录。是否允许执行？
+我需要执行 `pwd` 命令获取当前目录，是否允许运行？
 ```
 
-此时可以使用：
-
+操作快捷键：
 - `↑ / ↓`：切换选项
-- `Enter`：确认
-- `Ctrl+C`：拒绝
+- `Enter`：确认选中项
+- `Ctrl+C`：拒绝执行并终止当前任务
 
-可选项包括：
+可选权限模式：
+- **不允许**：本次拒绝该工具执行
+- **允许**：仅本次会话单次放行
+- **总是允许**：当前会话后续同类工具自动放行，提示符变为 `yuan-claw[always]>`
 
-- **不允许**
-- **允许**
-- **总是允许**
-
-如果选择 **总是允许**，当前会话后续的相关工具调用将自动通过，提示符也会变为：
-
-```txt
-yuan-claw[always]>
-```
-
-如需恢复逐次确认，可执行：
-
+如需恢复逐次确认模式，执行内置命令：
 ```txt
 /reset
 ```
@@ -306,32 +308,25 @@ yuan-claw[always]>
 
 ## CLI Usage
 
-全局安装后可直接运行：
-
+全局安装后直接启动：
 ```bash
 yuan-claw
 ```
 
-单次命令模式：
-
+单次指令模式：
 ```bash
-yuan-claw "帮我搜索 AI 新闻"
+yuan-claw "帮我搜索今日AI行业新闻"
 ```
 
-如果你是源码模式开发，则可以使用：
-
+源码开发环境运行：
 ```bash
+# 热更新开发模式
 npm run dev
+# 单次指令开发调试
+npm run dev -- "帮我梳理项目功能清单"
 ```
 
-或：
-
-```bash
-npm run dev -- "帮我总结这个项目的功能"
-```
-
-编译后运行：
-
+编译后生产运行：
 ```bash
 npm run build
 npm run start
@@ -339,24 +334,21 @@ npm run start
 
 ---
 
-## Web Search
+## Web Search 网页搜索能力
 
-如果你希望启用网页搜索工具，请配置：
-
+如需开启联网搜索工具，在全局配置文件填入百度搜索密钥：
 ```json
 {
   "BAIDU_API_KEY": "your_baidu_search_api_key"
 }
 ```
-
-未配置时，`web_search` 工具会被禁用。
+未配置密钥时，`web_search` 工具会自动禁用。
 
 ---
 
-## Proxy
+## Proxy 网络代理配置
 
-如需通过代理访问模型服务或外部网站，可以配置：
-
+访问境外模型/网页抓取需要代理时，写入配置文件：
 ```json
 {
   "HTTP_PROXY": "http://127.0.0.1:33210",
@@ -364,8 +356,7 @@ npm run start
 }
 ```
 
-程序会自动读取以下配置项：
-
+程序自动识别以下大小写代理配置字段：
 - `HTTP_PROXY`
 - `HTTPS_PROXY`
 - `http_proxy`
@@ -373,129 +364,106 @@ npm run start
 
 ---
 
-## Skills / 本地插件扩展
+## Skills / 本地自定义技能插件扩展
 
-yuan-claw 支持通过本地 Skill（技能）文件扩展 Agent 的能力。Skill 是存放在固定目录下的 Markdown 文件，Agent 会在运行时根据用户输入自动匹配并加载相关 Skill 的提示词，从而获得领域知识或操作指引。
+yuan-claw 支持本地 Markdown 技能文件扩展 Agent 领域能力，运行时自动匹配用户需求注入提示词。
 
-### Skill 目录结构
-
-所有 Skill 文件存放在：
-
+### Skill 存放目录
+所有自定义技能统一存放在用户目录：
 ```bash
 ~/.yuan-claw/skills/
 ```
 
-每个 Skill 是一个子目录，其中必须包含一个 `SKILL.md` 文件：
-
+目录规范：每个技能独立文件夹，内部必须包含 `SKILL.md`
 ```
 ~/.yuan-claw/skills/
 ├── pdf/
 │   └── SKILL.md
 ├── frontend-design/
 │   └── SKILL.md
-└── my-skill/
+└── my-custom-skill/
     └── SKILL.md
 ```
 
 ### SKILL.md 文件格式
-
-`SKILL.md` 使用 YAML frontmatter + Markdown body 的格式：
-
+采用 YAML 头部元数据 + Markdown 正文格式：
 ```markdown
 ---
 name: pdf
-description: PDF 文件处理技能，支持提取文本、表格、OCR 等
-tags: [pdf, document, ocr]
+description: PDF文档处理技能，支持文本提取、表格解析、扫描件OCR识别
+tags: [pdf, document, ocr, file]
 license: MIT
 version: 1.0.0
 ---
 
-## 使用指南
-
-当用户需要处理 PDF 文件时：
-1. 使用 pdfplumber 提取文本...
-2. 对于扫描件，使用 OCR...
+## 使用指引
+用户提出PDF相关需求时严格遵循以下流程：
+1. 使用pdfplumber提取PDF内文字与表格；
+2. 扫描图片类PDF自动调用OCR文字识别；
+3. 整理提取内容并精简输出总结。
 ```
 
-Frontmatter 字段说明：
+元数据字段说明：
+- `name`（可选）：技能名称，无配置则使用文件夹名
+- `description`（可选）：简短功能描述，用于关键词匹配
+- `tags`（可选）：标签数组，提升用户输入匹配命中率
+- `license`（可选）：开源协议声明
+- `version`（可选）：技能版本号
 
-- `name`（可选）：Skill 名称，用于匹配和展示。未填写时使用目录名
-- `description`（可选）：简短描述，用于匹配和展示
-- `tags`（可选）：标签数组，用于关键词匹配
-- `license`（可选）：许可证
-- `version`（可选）：版本号
+Markdown 正文会作为系统提示词注入大模型，指导Agent对应领域执行逻辑。
 
-Markdown body 是 Skill 的实际提示词内容，会被注入到 system prompt 中指导 Agent 行为。
+### 技能匹配规则
+运行时自动匹配最多3个关联技能，匹配权重：
+1. 用户输入包含技能名称
+2. 用户输入命中技能标签
+3. 用户输入关键词与技能描述语义重合
 
-### 匹配机制
-
-Agent 会根据用户输入自动匹配最相关的 Skill（最多匹配 3 个），匹配依据包括：
-
-- 用户输入中是否包含 Skill 名称
-- 用户输入中是否包含 Skill 的标签
-- 用户输入分词后与 Skill 描述的关键词重合度
-
-匹配到的 Skill 内容会被组装到 system prompt 中，指导 Agent 使用相应的知识和流程。
-
-### 添加自定义 Skill
-
-1. 在 `~/.yuan-claw/skills/` 下创建新目录：
-
+### 添加自定义技能步骤
+1. 创建技能文件夹
 ```bash
 mkdir -p ~/.yuan-claw/skills/my-skill
 ```
-
-2. 创建 `SKILL.md` 文件：
-
+2. 写入SKILL.md技能文件
 ```bash
 cat > ~/.yuan-claw/skills/my-skill/SKILL.md << 'EOF'
 ---
 name: my-skill
-description: 我的自定义技能
-tags: [custom]
+description: 自定义业务处理技能
+tags: [custom, business]
 ---
-
-当用户问到 XXX 时，请按以下步骤操作：
-1. ...
-2. ...
+用户询问业务相关内容时，按标准化流程输出回答。
 EOF
 ```
-
-3. 下次运行 `yuan-claw` 时，该 Skill 会被自动发现和加载。
+3. 重启 `yuan-claw` 自动加载新技能。
 
 ---
 
-## IntelliJ IDEA / WebStorm 插件
+## IntelliJ IDEA / WebStorm 开发插件
 
-yuan-claw 提供了 JetBrains IDE 插件，可在 IDE 内一键启动 CLI，无需切换终端。
+yuan-claw 提供 JetBrains IDE 官方插件，IDE内一键唤起CLI，无需切换终端窗口。
 
-### 安装
+### 安装步骤
+1. 获取插件安装包：`idea-plugin/build/distributions/yuan-claw-plugin-1.0.0.zip`
+   或从项目发布页下载：[Releases](https://github.com/jiangyuan1209/yuan-claw/releases)
+2. 打开IDE → `Settings` → `Plugins` → 右上角齿轮图标 → `Install Plugin from Disk`
+3. 选中zip安装包，完成后**重启IDE**生效
 
-1. 下载插件：`idea-plugin/build/distributions/yuan-claw-plugin-1.0.0.zip`
-   （或从 [Releases](https://github.com/your-name/yuan-claw/releases) 获取）
-2. 打开 IDE → `Settings` → `Plugins` → `⚙️ 齿轮图标` → `Install Plugin from Disk`
-3. 选择 zip 文件，安装完成后 **重启 IDE**
+### 插件使用方式
+- 菜单栏入口：`Tools` → `Run Yuan-Claw`
+- 全局快捷键：Windows/Linux `Ctrl + Alt + Y` | macOS `⌃⌥Y`
 
-### 使用
+点击后IDE底部自动新建终端标签，在当前项目目录启动 `yuan-claw`。
 
-- **顶部菜单栏**：`Tools` → `Run Yuan-Claw`
-- **快捷键**：`Ctrl + Alt + Y`（macOS: `⌃⌥Y`）
-
-点击后会在 IDE 底部终端窗口打开一个名为 `yuan-claw` 的标签页，并在项目根目录下自动执行 `yuan-claw` 命令。
-
-### 从源码构建
-
+### 源码构建插件包
 ```bash
 cd idea-plugin
 ./gradlew buildPlugin
 ```
-
-构建产物：`build/distributions/yuan-claw-plugin-1.0.0.zip`
+构建产物输出路径：`build/distributions/yuan-claw-plugin-1.0.0.zip`
 
 ---
 
-## Scripts
-
+## Package Scripts
 ```json
 {
   "scripts": {
@@ -507,112 +475,69 @@ cd idea-plugin
 }
 ```
 
-### 脚本说明
+脚本功能说明：
+- `npm run dev`：源码热更新开发模式运行CLI
+- `npm run build`：编译TypeScript代码至dist生产目录
+- `npm run start`：执行编译后的成品CLI程序
+- `npm run check`：仅执行TS类型校验，不编译输出产物
 
-- `npm run dev`：开发模式运行源码
-- `npm run build`：编译到 `dist/`
-- `npm run start`：运行编译后的 CLI
-- `npm run check`：执行 TypeScript 类型检查
-
-说明：
-
-- `npm run dev` / `npm run start`
-    - 不传参数：进入 REPL
-    - 传入参数：执行单次命令
+参数传递规则：
+- 无追加参数：直接进入REPL多轮对话
+- 追加字符串参数：单次执行指令后退出
 
 ---
 
-## Examples
-
-### 普通问答
-
+## Examples 使用示例
+### 基础问答
 ```bash
-yuan-claw "帮我总结这个项目的功能"
+yuan-claw "帮我总结本项目全部功能"
 ```
 
-### 搜索最新消息
-
+### 联网搜索资讯
 ```bash
-yuan-claw "帮我搜索 OpenAI 最新消息"
+yuan-claw "搜索2026最新大模型行业资讯"
 ```
 
-### 进入 REPL
-
+### 进入交互式多轮对话
 ```bash
 yuan-claw
 ```
 
-### 源码开发模式
-
+### 源码开发调试
 ```bash
 npm run dev
 ```
 
-### 编译后运行
-
+### 编译成品单次指令运行
 ```bash
 npm run build
-npm run start -- "帮我搜索 AI 新闻"
+npm run start -- "搜索前端AI工具最新开源项目"
 ```
 
 ---
 
-## Troubleshooting
+## Troubleshooting 常见问题排错
+### 1. 首次运行配置文件不生效
+初次执行 `yuan-claw` 仅生成空白配置文件 `~/.yuan-claw/settings.json`，**必须手动填入模型密钥后重启程序**，配置才会加载生效。
 
-### 第一次运行后为什么没有立即生效？
-
-因为第一次执行：
-
-```bash
-yuan-claw
-```
-
-通常只是为了初始化配置文件：
-
-```bash
-~/.yuan-claw/settings.json
-```
-
-你需要手动填写配置项并保存，然后再次执行：
-
-```bash
-yuan-claw
-```
-
----
-
-### `Missing MODEL_API_KEY / OPENAI_API_KEY in environment variables.`
-
-说明模型 API Key 尚未正确配置。请在以下位置填写：
-
-- `~/.yuan-claw/settings.json`
-
-例如：
-
+### 2. 报错 `Missing MODEL_API_KEY / OPENAI_API_KEY`
+未填写大模型API密钥，打开全局配置文件补充：
 ```json
 {
-  "MODEL_API_KEY": "your_api_key"
+  "MODEL_API_KEY": "你的模型密钥"
 }
 ```
 
----
-
-### `web_search disabled: set BAIDU_API_KEY`
-
-说明未配置百度搜索 API Key。请添加：
-
+### 3. 提示 `web_search disabled: set BAIDU_API_KEY`
+未配置百度搜索密钥，无法调用联网搜索工具，补充配置：
 ```json
 {
-  "BAIDU_API_KEY": "your_baidu_search_api_key"
+  "BAIDU_API_KEY": "你的百度搜索密钥"
 }
 ```
 
----
-
-### 无法访问外部服务 / 请求超时
-
-请检查是否需要代理，例如：
-
+### 4. 请求模型超时/无法连接境外接口
+需要配置网络代理，写入代理地址至配置文件：
 ```json
 {
   "HTTP_PROXY": "http://127.0.0.1:33210",
@@ -620,57 +545,54 @@ yuan-claw
 }
 ```
 
----
+### 5. 网页抓取返回 403 Forbidden
+目标网站存在反爬拦截策略，属于站点限制，建议优先使用内置web_search搜索工具获取公开内容。
 
-### 某些网页返回 403 / Forbidden
-
-这通常是目标站点的反爬策略导致的，不一定是程序错误。  
-建议优先使用搜索 API 或可信数据源。
-
----
-
-### `npm run start` 无法运行
-
-请先执行：
-
+### 6. `npm run start` 运行报错
+执行前必须先编译生成dist产物：
 ```bash
 npm run build
 ```
+`start` 脚本依赖编译输出 `dist/cli/main.js` 文件。
 
-因为 `start` 依赖编译输出文件：
-
-```txt
-dist/cli/main.js
-```
-
----
-
-### 全局命令 `yuan-claw` 不存在
-
-如果你是通过 npm 全局安装，请确认已成功安装：
-
-```bash
-npm install -g @jiangyuan1209/yuan-claw
-```
-
-如仍有问题，可尝试重新安装：
-
+### 7. 全局终端输入 `yuan-claw` 提示命令不存在
+全局安装未成功，重装官方npm包：
 ```bash
 npm uninstall -g @jiangyuan1209/yuan-claw
 npm install -g @jiangyuan1209/yuan-claw@latest
 ```
 
+### 8. 安装 GitHub Packages 包提示 404 Not Found
+未配置scope源，执行全局源配置命令后重新安装：
+```bash
+npm config set @jiangyuan1209:registry https://npm.pkg.github.com
+```
+
 ---
 
-## Development
-
+## Development 本地二次开发
 ```bash
+# 安装全部依赖
 npm install
+# 全量TS类型检查
 npm run check
+# 热更新开发运行
 npm run dev
 ```
 
 ---
 ## License
 
-MIT
+yuan-claw 采用 **木兰宽松许可证，第2版（Mulan PSL v2）** 开源。
+
+完整许可证文本见仓库根目录 `LICENSE` 文件，也可在线查阅官方原版：
+http://license.coscl.org.cn/MulanPSL2
+
+### 版权声明
+Copyright (c) 2026 jiangyuan1209
+yuan-claw is licensed under Mulan PSL v2.
+You can use this software according to the terms and conditions of the Mulan PSL v2.
+You may obtain a copy of Mulan PSL v2 at:
+http://license.coscl.org.cn/MulanPSL2
+THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+See the Mulan PSL v2 for more details.
