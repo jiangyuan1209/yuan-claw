@@ -1,9 +1,9 @@
 name: Publish Package to npmjs & GitHub Packages
-# 仅在新建Release时触发
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 on:
   release:
     types: [created]
-# 授予上传Packages的权限
 permissions:
   contents: read
   packages: write
@@ -12,31 +12,25 @@ jobs:
   publish-npm-packages:
     runs-on: ubuntu-latest
     steps:
-      # 1. 拉取仓库完整代码
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # 2. 安装Node环境，配置GitHub Packages源与scope
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # GitHub Packages registry地址
-          registry-url: https://npm.pkg.github.com
-          # 你的scope前缀
           scope: '@jiangyuan1209'
 
-      # 3. 安装全部依赖（lock文件精准安装）
       - name: Install dependencies
         run: npm ci
 
-      # 4. 发布到 GitHub Packages（内置GITHUB_TOKEN鉴权）
+      # 第一步：发布 GitHub Packages，强制指定 registry + 内置GITHUB_TOKEN
       - name: Publish to GitHub Packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm publish
+        run: npm publish --registry=https://npm.pkg.github.com
 
-      # 5. 发布到 npmjs.org（切换官方registry，使用NPM_TOKEN鉴权）
+      # 第二步：发布 npmjs 官方源，使用NPM_TOKEN
       - name: Publish to npm official registry
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
