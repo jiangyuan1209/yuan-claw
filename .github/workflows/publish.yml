@@ -15,22 +15,22 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
+      # 关键：setup-node 必须配置 registry-url 才能让 GITHUB_TOKEN 自动鉴权 GH Packages
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          registry-url: https://npm.pkg.github.com
           scope: '@jiangyuan1209'
 
       - name: Install dependencies
         run: npm ci
 
-      # 第一步：发布 GitHub Packages，强制指定 registry + 内置GITHUB_TOKEN
+      # 发布 GitHub Packages：setup-node 已自动绑定 GITHUB_TOKEN，无需手动传 env
       - name: Publish to GitHub Packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm publish --registry=https://npm.pkg.github.com
 
-      # 第二步：发布 npmjs 官方源，使用NPM_TOKEN
+      # 发布 npmjs 官方源，单独注入 NPM_TOKEN
       - name: Publish to npm official registry
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
