@@ -8,11 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jiangyuan1209/yuan-claw.git"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "public"
+    "url": "git+https://github.com/jiangyuan1209/yuan-claw.git"
   },
   "files": [
     "dist",
@@ -25,7 +21,6 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/cli/main.js",
     "check": "tsc --noEmit",
-    "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "engines": {
