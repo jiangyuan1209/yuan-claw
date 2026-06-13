@@ -1,48 +1,40 @@
-name: Publish Package to npmjs & GitHub Packages
+name: Publish Package to GitHub Packages
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
   release:
     types: [created]
 
 jobs:
-  publish-packages:
+  publish-npm-packages:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+      # 先恢复适配GH仓库的publishConfig（流水线只发GH，不用删除）
+      - name: Restore GH publish config
+        run: |
+          npm pkg set publishConfig.registry=https://npm.pkg.github.com
+          npm pkg set publishConfig.access=public
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Configure Node.js for npmjs
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-          scope: '@jiangyuan1209'
-
-      - name: Publish to npmjs
-        run: npm publish --access public --registry=https://registry.npmjs.org
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Configure Node.js for GitHub Packages
+      # 配置Node绑定GitHub Packages源 + 内置GITHUB_TOKEN鉴权
+      - name: Setup Node for GitHub Packages
         uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: https://npm.pkg.github.com
           scope: '@jiangyuan1209'
-
-      - name: Publish to GitHub Packages
-        run: npm publish --access public --registry=https://npm.pkg.github.com
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 仅执行GitHub Packages发布
+      - name: Publish to GitHub Packages
+        run: npm publish --access public
