@@ -1,21 +1,22 @@
 name: Publish Package to npmjs & GitHub Packages
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   release:
     types: [created]
-permissions:
-  contents: read
-  packages: write
 
 jobs:
   publish-npm-packages:
     runs-on: ubuntu-latest
+    # 权限写在job内，保证GITHUB_TOKEN具备上传包权限
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # 关键：setup-node 必须配置 registry-url 才能让 GITHUB_TOKEN 自动鉴权 GH Packages
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -26,11 +27,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 发布 GitHub Packages：setup-node 已自动绑定 GITHUB_TOKEN，无需手动传 env
+      # GitHub Packages发布，强制注入内置GITHUB_TOKEN
       - name: Publish to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm publish --registry=https://npm.pkg.github.com
 
-      # 发布 npmjs 官方源，单独注入 NPM_TOKEN
+      # npm官方源发布，使用仓库配置的NPM_TOKEN
       - name: Publish to npm official registry
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
