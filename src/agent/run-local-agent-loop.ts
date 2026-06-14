@@ -5,6 +5,8 @@ import { buildSystemPrompt } from "./build-system-prompt.js";
 import { parseAgentResponse } from "./parse-agent-response.js";
 import type { ApprovalDecision } from "./read-approval.js";
 import { SkillsRuntime } from "../skills/runtime.js";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 type ModelClient = {
     generate: (messages: ChatMessage[]) => Promise<string>;
@@ -70,6 +72,12 @@ export async function runLocalAgentLoop(
     let approvalMode: ApprovalMode = params.approvalMode ?? "ask";
     let allowOneHighRiskToolCall = approvalMode === "always-allow";
 
+    // Track script files created by write_file for cleanup after loop ends.
+    // Only scripts that were BOTH created AND executed are cleaned up.
+    // Value=true means the script was executed (intermediate tool), value=false means created but not run (user's output).
+    const SCRIPT_EXTENSIONS = new Set([".py", ".sh", ".bash", ".rb", ".pl"]);
+    const createdFiles = new Map<string, boolean>();
+
     eventBus.emit({
         type: "run_start",
         input: userInput,
@@ -98,7 +106,8 @@ export async function runLocalAgentLoop(
 
     await persistMessages(messages, onMessagesUpdated);
 
-    for (let step = 1; step <= maxSteps; step += 1) {
+    try {
+        for (let step = 1; step <= maxSteps; step += 1) {
         let rawOutput: string;
 
         try {
@@ -295,6 +304,30 @@ export async function runLocalAgentLoop(
             try {
                 result = await tool.execute(response.args);
 
+                // Track script files created by write_file for later cleanup
+                if (response.toolName === "write_file" && result.success) {
+                    const output = result.output as { path?: string } | undefined;
+                    if (output?.path) {
+                        const ext = path.extname(output.path).toLowerCase();
+                        if (SCRIPT_EXTENSIONS.has(ext)) {
+                            createdFiles.set(output.path, false); // created but not yet executed
+                        }
+                    }
+                }
+
+                // Mark script as executed if shell_exec references a tracked script
+                if (response.toolName === "shell_exec" && result.success) {
+                    const args = response.args as { command?: string } | undefined;
+                    if (args?.command) {
+                        for (const [filePath] of createdFiles) {
+                            const fileName = path.basename(filePath);
+                            if (args.command.includes(fileName)) {
+                                createdFiles.set(filePath, true);
+                            }
+                        }
+                    }
+                }
+
                 if (needsConfirmation && approvalMode !== "always-allow") {
                     allowOneHighRiskToolCall = false;
                 }
@@ -359,6 +392,18 @@ export async function runLocalAgentLoop(
 
             await persistMessages(messages, onMessagesUpdated);
             continue;
+        }
+    }
+    } finally {
+        // Clean up script files that were created AND executed during the loop
+        for (const [filePath, wasExecuted] of createdFiles) {
+            if (wasExecuted) {
+                try {
+                    await fs.unlink(filePath);
+                } catch {
+                    // Ignore deletion errors (file may not exist or already deleted)
+                }
+            }
         }
     }
 
