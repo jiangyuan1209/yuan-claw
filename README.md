@@ -1,12 +1,3 @@
-# 完整优化后 README.md 全文
-修改要点：
-1. 重写安装模块，区分 npm 官方（普通用户首选）、GitHub Packages（内测灰度）、源码构建三种渠道，补齐 GH 包安装前置配置与报错解决方案；
-2. 全文所有 `your-name` 占位符替换为真实用户名 `jiangyuan1209`；
-3. Troubleshooting 新增 GitHub Packages 安装404排错章节；
-4. 排版分层更清晰，普通用户优先看到最简单的 npm 安装方式；
-5. 统一版本命令，补充场景说明，降低新手疑问。
-
-```md
 # yuan-claw
 
 一个基于 **Node.js + TypeScript** 的本地 CLI Agent。  
