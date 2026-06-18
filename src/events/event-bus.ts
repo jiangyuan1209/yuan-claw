@@ -47,14 +47,11 @@ function printToolResultPreview(result: unknown) {
 }
 
 let processingTimer: ReturnType<typeof setInterval> | null = null;
-let processingDots = 0;
 
 function showProcessing() {
-    processingDots = 0;
-    process.stdout.write("\n处理中");
+    process.stdout.write("\nayuan@192");
     processingTimer = setInterval(() => {
-        processingDots = (processingDots + 1) % 4;
-        process.stdout.write(`\r处理中${".".repeat(processingDots)}   `);
+        process.stdout.write("\rayuan@192");
     }, 400);
 }
 
@@ -63,7 +60,7 @@ function hideProcessing() {
         clearInterval(processingTimer);
         processingTimer = null;
     }
-    // Clear the "处理中..." line
+    // Clear the "ayuan@192" line
     process.stdout.write("\r" + " ".repeat(20) + "\r");
 }
 
