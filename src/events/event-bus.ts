@@ -25,11 +25,14 @@ export type AgentEvent =
 
 export type EventBus = {
     emit: (event: AgentEvent) => void;
+    showProcessing: () => void;
+    hideProcessing: () => void;
 };
 
 type CreateConsoleEventBusOptions = {
     json?: boolean;
     quiet?: boolean;
+    debug?: boolean;
 };
 
 function printToolResultPreview(result: unknown) {
@@ -43,11 +46,33 @@ function printToolResultPreview(result: unknown) {
     }
 }
 
+let processingTimer: ReturnType<typeof setInterval> | null = null;
+let processingDots = 0;
+
+function showProcessing() {
+    processingDots = 0;
+    process.stdout.write("\n处理中");
+    processingTimer = setInterval(() => {
+        processingDots = (processingDots + 1) % 4;
+        process.stdout.write(`\r处理中${".".repeat(processingDots)}   `);
+    }, 400);
+}
+
+function hideProcessing() {
+    if (processingTimer) {
+        clearInterval(processingTimer);
+        processingTimer = null;
+    }
+    // Clear the "处理中..." line
+    process.stdout.write("\r" + " ".repeat(20) + "\r");
+}
+
 export function createConsoleEventBus(
     options: CreateConsoleEventBusOptions = {},
 ): EventBus {
     const json = options.json ?? false;
     const quiet = options.quiet ?? false;
+    const debug = options.debug ?? false;
 
     return {
         emit(event) {
@@ -56,7 +81,8 @@ export function createConsoleEventBus(
                 return;
             }
 
-            if (quiet) {
+            if (quiet || !debug) {
+                // Non-debug mode: only show final results and errors
                 if (event.type === "assistant") {
                     console.log(event.message);
                 }
@@ -65,9 +91,19 @@ export function createConsoleEventBus(
                     console.error(`[run_error] ${event.stage}: ${event.error}`);
                 }
 
+                // Show processing indicator on run_start, hide on run_end
+                if (event.type === "run_start") {
+                    showProcessing();
+                }
+
+                if (event.type === "run_end") {
+                    hideProcessing();
+                }
+
                 return;
             }
 
+            // Debug mode: show all intermediate steps
             switch (event.type) {
                 case "run_start":
                     console.log(`\n[run_start] ${event.input}`);
@@ -108,5 +144,8 @@ export function createConsoleEventBus(
                     break;
             }
         },
+
+        showProcessing,
+        hideProcessing,
     };
 }

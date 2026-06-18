@@ -20,6 +20,7 @@ type StartReplOptions = {
     json?: boolean;
     quiet?: boolean;
     maxSteps?: number;
+    debug?: boolean;
     config: AppConfig;
 };
 
@@ -130,6 +131,7 @@ export async function startRepl(options: StartReplOptions) {
 
     let messages: ChatMessage[] = [];
     let approvalMode: ApprovalMode = "ask";
+    let debugMode = options.debug ?? false;
 
     async function requestApproval(message: string): Promise<ApprovalDecision> {
         const result = await selectApprovalWithArrows(message);
@@ -193,6 +195,7 @@ Commands:
   /save    Save current session
   /reset   Reset approval mode to ask
   /status  Show current session status
+  /debug   Toggle debug mode (show/hide intermediate steps)
 `);
             continue;
         }
@@ -220,12 +223,20 @@ Commands:
             console.log(`sessionId: ${sessionId}`);
             console.log(`approvalMode: ${approvalMode}`);
             console.log(`messageCount: ${messages.length}`);
+            console.log(`debugMode: ${debugMode}`);
+            continue;
+        }
+
+        if (userInput === "/debug") {
+            debugMode = !debugMode;
+            console.log(`Debug mode ${debugMode ? "enabled" : "disabled"}.`);
             continue;
         }
 
         const eventBus = createConsoleEventBus({
             json: options.json,
             quiet: options.quiet,
+            debug: debugMode,
         });
 
         try {
