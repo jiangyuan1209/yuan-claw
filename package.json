@@ -22,7 +22,11 @@
     "start": "node dist/cli/main.js",
     "check": "tsc --noEmit",
     "publish:npm": "./publish-npm.sh",
-    "publish:gh": "./publish-gh.sh"
+    "publish:gh": "./publish-gh.sh",
+    "link:global": "npm run build && npm link",
+    "unlink:global": "npm unlink @jiangyuan1209/yuan-claw",
+    "uninstall:local": "npm uninstall -g @jiangyuan1209/yuan-claw",
+    "install:local": "npm run build && npm install -g ."
   },
   "engines": {
     "node": ">=20"
