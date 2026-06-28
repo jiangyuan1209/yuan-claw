@@ -7,6 +7,9 @@ echo "====================================="
 
 # 登陆
 npm login --registry=https://registry.npmjs.org/
+
+# 更新版本
+npm version patch
 # 构建
 npm run build
 # 发布
