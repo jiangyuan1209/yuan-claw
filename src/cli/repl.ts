@@ -1,6 +1,5 @@
-import { stdin as input, stdout as output } from "node:process";
 import crypto from "node:crypto";
-import { multiline, isCancel } from "@clack/prompts";
+import { multiline, select, isCancel } from "@clack/prompts";
 import type { ChatMessage } from "../memory/types.js";
 import { resolveWorkspaceRoot } from "../security/path-guards.js";
 import { createToolRegistry } from "../tools/registry.js";
@@ -25,93 +24,12 @@ type StartReplOptions = {
 };
 
 function approvalLabel(decision: ApprovalDecision): string {
-    switch (decision) {
-        case "deny":
-            return "不允许";
-        case "allow-once":
-            return "允许";
-        case "allow-always":
-            return "总是允许";
-    }
-}
-
-function printApprovalMenu(message: string, selectedIndex: number) {
-    const options = [
-        { label: "不允许", hint: "拒绝这次操作" },
-        { label: "允许", hint: "仅允许这一次" },
-        { label: "总是允许", hint: "当前会话后续 confirm / dangerous 操作自动允许" },
-    ];
-
-    output.write(`\n${message}\n\n`);
-    output.write("使用 ↑ / ↓ 切换，Enter 确认，Ctrl+C 拒绝\n\n");
-
-    for (let i = 0; i < options.length; i += 1) {
-        const prefix = i === selectedIndex ? "❯" : " ";
-        output.write(`${prefix} ${options[i].label}  ${options[i].hint}\n`);
-    }
-
-    output.write("\n");
-}
-
-async function selectApprovalWithArrows(
-    message: string,
-): Promise<ApprovalDecision> {
-    const values: ApprovalDecision[] = ["deny", "allow-once", "allow-always"];
-    let selectedIndex = 1;
-
-    return await new Promise<ApprovalDecision>((resolve) => {
-        const cleanup = () => {
-            input.off("data", onData);
-            if (input.isTTY) {
-                input.setRawMode(false);
-            }
-        };
-
-        const onData = (buffer: Buffer) => {
-            const key = buffer.toString("utf8");
-
-            if (key === "\u0003") {
-                cleanup();
-                output.write("\n");
-                resolve("deny");
-                return;
-            }
-
-            if (key === "\r" || key === "\n") {
-                const result = values[selectedIndex];
-                cleanup();
-                output.write(`已选择：${approvalLabel(result)}\n\n`);
-                resolve(result);
-                return;
-            }
-
-            if (key === "\u001b[A") {
-                selectedIndex =
-                    selectedIndex === 0 ? values.length - 1 : selectedIndex - 1;
-                printApprovalMenu(message, selectedIndex);
-                return;
-            }
-
-            if (key === "\u001b[B") {
-                selectedIndex =
-                    selectedIndex === values.length - 1 ? 0 : selectedIndex + 1;
-                printApprovalMenu(message, selectedIndex);
-            }
-        };
-
-        if (output.isTTY) {
-            output.write("\x1b[2K\r");
-        }
-
-        if (input.isTTY) {
-            input.setRawMode(true);
-        }
-
-        input.resume();
-        input.on("data", onData);
-
-        printApprovalMenu(message, selectedIndex);
-    });
+    const labels: Record<ApprovalDecision, string> = {
+        deny: "不允许",
+        "allow-once": "允许",
+        "allow-always": "总是允许",
+    };
+    return labels[decision];
 }
 
 export async function startRepl(options: StartReplOptions) {
@@ -134,8 +52,25 @@ export async function startRepl(options: StartReplOptions) {
     let debugMode = options.debug ?? false;
 
     async function requestApproval(message: string): Promise<ApprovalDecision> {
-        const result = await selectApprovalWithArrows(message);
-        console.log("");
+        const result = await select<ApprovalDecision>({
+            message,
+            options: [
+                { value: "deny", label: "不允许", hint: "拒绝这次操作" },
+                { value: "allow-once", label: "允许", hint: "仅允许这一次" },
+                {
+                    value: "allow-always",
+                    label: "总是允许",
+                    hint: "当前会话后续 confirm / dangerous 操作自动允许",
+                },
+            ],
+        });
+
+        if (isCancel(result)) {
+            console.log("已取消，本次按不允许处理。");
+            return "deny";
+        }
+
+        console.log(`已选择：${approvalLabel(result)}\n`);
         return result;
     }
 
