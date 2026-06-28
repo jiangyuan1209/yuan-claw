@@ -1,6 +1,6 @@
 {
   "name": "@jiangyuan1209/yuan-claw",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "A local CLI agent with tools, search, and interactive approval.",
   "type": "module",
   "bin": {
@@ -17,6 +17,7 @@
     ".env.example"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "dev": "tsx src/cli/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/cli/main.js",

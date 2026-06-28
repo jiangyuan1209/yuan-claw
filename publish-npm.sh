@@ -7,6 +7,8 @@ echo "====================================="
 
 # 登陆
 npm login --registry=https://registry.npmjs.org/
+# 构建
+npm run build
 # 发布
 npm publish --registry=https://registry.npmjs.org --access public
 
