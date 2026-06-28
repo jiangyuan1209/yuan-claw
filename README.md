@@ -28,13 +28,22 @@
 
 ### 1. npm 官方仓库（推荐）
 ```bash
+# 安装最新版
 npm install -g @jiangyuan1209/yuan-claw
+# 指定版本安装
+npm install -g @jiangyuan1209/yuan-claw@0.1.14
+# 升级
+npm install -g @jiangyuan1209/yuan-claw@latest
+# 卸载（和npm官方包卸载命令完全一致）
+npm uninstall -g @jiangyuan1209/yuan-claw
 ```
 
 ### 2. GitHub Packages（内测版）
 需先配置源：`npm config set @jiangyuan1209:registry https://npm.pkg.github.com`
 ```bash
 npm install -g @jiangyuan1209/yuan-claw
+# 卸载（和npm官方包卸载命令完全一致）
+npm uninstall -g @jiangyuan1209/yuan-claw
 ```
 
 ### 3. 源码构建
