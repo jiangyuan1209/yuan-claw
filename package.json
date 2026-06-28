@@ -1,6 +1,6 @@
 {
   "name": "@jiangyuan1209/yuan-claw",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "A local CLI agent with tools, search, and interactive approval.",
   "type": "module",
   "bin": {
