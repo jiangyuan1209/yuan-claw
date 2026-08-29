@@ -16,6 +16,7 @@
 - 🔁 支持会话级”总是允许”模式
 - 📦 支持本地 Skill 插件扩展能力
 - 🔌 支持代理配置
+- 🌍 支持 Web 网页端对话（React + Ant Design + Ant Design X）
 
 ---
 
@@ -75,6 +76,12 @@ yuan-claw
 
 # 单次指令
 yuan-claw "帮我搜索 OpenAI 最新消息"
+
+# Web 网页模式
+yuan-claw-web
+# 或
+npm run dev:web
+# 打开 http://localhost:3000
 ```
 
 ## Configuration
@@ -113,13 +120,39 @@ yuan-claw "帮我搜索 OpenAI 最新消息"
 在 `~/.yuan-claw/skills/` 下创建文件夹并添加 `SKILL.md` 即可扩展 Agent 能力。
 格式：YAML 元数据 + Markdown 正文。
 
+## Web 模式
+
+启动 Web 服务器后，在浏览器中打开 `http://localhost:3000` 即可开始网页对话。
+
+```bash
+# 开发模式（使用 tsx 直接运行）
+npm run dev:web
+
+# 开发模式（同时启动前端 Vite 开发服务器）
+npm run dev:web:ui
+
+# 生产模式（需先构建）
+npm run build
+npm run build:web:ui
+npm run start:web
+```
+
+网页端支持：
+- 💬 实时对话气泡展示（Ant Design X Bubble）
+- 🔧 工具调用状态实时展示
+- 📱 响应式布局
+- 🔄 多轮对话上下文保持
+
 ## Development
 
 ```bash
-npm run dev    # 热更新开发
-npm run build  # 编译至 dist
-npm run start  # 运行编译产物
-npm run check  # 类型检查
+npm run dev          # CLI 热更新开发
+npm run dev:web      # Web 服务器开发
+npm run dev:web:ui   # Web 前端开发服务器
+npm run build        # 编译至 dist
+npm run start        # 运行编译产物
+npm run start:web    # 运行 Web 生产模式
+npm run check        # 类型检查
 ```
 
 ## License

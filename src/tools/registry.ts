@@ -34,7 +34,7 @@ export function createToolRegistry(
         createShellExecTool({ workspaceRoot: options.workspaceRoot }),
         createGitStatusTool({ workspaceRoot: options.workspaceRoot }),
         createGitDiffTool({ workspaceRoot: options.workspaceRoot }),
-        createHttpFetchTool(),
+        // createHttpFetchTool(),
         createExtractReadableTextTool(),
     ];
 
