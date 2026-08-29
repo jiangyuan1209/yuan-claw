@@ -7,16 +7,8 @@ const userSettingsSchema = z.object({
     MODEL_BASE_URL: z.string().optional(),
     MODEL_NAME: z.string().optional(),
 
-    OPENAI_API_KEY: z.string().optional(),
-    OPENAI_BASE_URL: z.string().optional(),
-    OPENAI_MODEL: z.string().optional(),
-
     BAIDU_API_KEY: z.string().optional(),
-
-    HTTP_PROXY: z.string().optional(),
-    HTTPS_PROXY: z.string().optional(),
-    http_proxy: z.string().optional(),
-    https_proxy: z.string().optional(),
+    BAIDU_API_URL: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof userSettingsSchema>;

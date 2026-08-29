@@ -35,18 +35,20 @@ export function createToolRegistry(
         createGitStatusTool({ workspaceRoot: options.workspaceRoot }),
         createGitDiffTool({ workspaceRoot: options.workspaceRoot }),
         // createHttpFetchTool(),
-        createExtractReadableTextTool(),
+        // createExtractReadableTextTool(),
     ];
 
     const config = options.config ?? {};
 
     const baiduApiKey = config.BAIDU_API_KEY;
+    const baiduApiUrl = config.BAIDU_API_URL;
 
     if (baiduApiKey) {
         tools.push(
             createWebSearchTool({
                 provider: createBaiduSearchProvider({
                     apiKey: baiduApiKey,
+                    baseUrl: baiduApiUrl,
                 }),
             })
         );

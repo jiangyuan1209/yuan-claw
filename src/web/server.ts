@@ -6,7 +6,6 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import { initGlobalProxy } from "../lib/initGlobalProxy.js";
 import { createToolRegistry } from "../tools/registry.js";
 import { SessionStore } from "../memory/session-store.js";
 import { createWebEventBusBroadcast } from "../events/web-event-bus.js";
@@ -33,7 +32,6 @@ async function main() {
     // Initialize config (same as CLI does)
     await ensureUserConfigInitialized();
     const config = await loadAppConfig();
-    initGlobalProxy(config);
 
     const app = express();
     app.use(express.json({ limit: "10mb" }));

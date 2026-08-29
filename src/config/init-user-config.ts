@@ -9,8 +9,6 @@ const DEFAULT_SETTINGS = {
     OPENAI_BASE_URL: "",
     OPENAI_MODEL: "",
     BAIDU_API_KEY: "",
-    HTTP_PROXY: "",
-    HTTPS_PROXY: "",
 };
 
 export async function ensureUserConfigInitialized(): Promise<{

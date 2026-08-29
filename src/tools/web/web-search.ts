@@ -34,7 +34,9 @@ export function createWebSearchTool(
         async execute(rawArgs): Promise<ToolResult> {
             try {
                 const args = WebSearchInputSchema.parse(rawArgs);
+                console.error(`[web_search] executing: query="${args.query}", count=${args.count}`);
                 const results = await options.provider(args.query, args.count);
+                console.error(`[web_search] got ${results.length} result(s)`);
 
                 return {
                     success: true,
@@ -45,9 +47,11 @@ export function createWebSearchTool(
                     },
                 };
             } catch (error) {
+                const errMsg = error instanceof Error ? error.message : String(error);
+                console.error(`[web_search] failed: ${errMsg}`);
                 return {
                     success: false,
-                    error: error instanceof Error ? error.message : String(error),
+                    error: errMsg,
                 };
             }
         },

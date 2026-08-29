@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { select, cancel, isCancel } from "@clack/prompts";
-import { initGlobalProxy } from "../lib/initGlobalProxy.js";
 import type { ChatMessage } from "../memory/types.js";
 import { parseCliArgs } from "./parse-args.js";
 import { getHelpText } from "./help.js";
@@ -64,8 +63,6 @@ async function main() {
         console.log(`Initialized config file at: ${initResult.settingsPath}`);
         console.log("Please edit the file and add your model settings if needed.\n");
     }
-
-    initGlobalProxy(config);
 
     if (!args.userInput) {
         await startRepl({

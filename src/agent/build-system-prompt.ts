@@ -37,6 +37,7 @@ export function buildSystemPrompt(tools: Tool[], skillsPrompt?: string): string 
         "",
         "TOOL RULES:",
         "- Use tools when you need real information from files, git, shell, or the web.",
+        "- For real-time information (weather, news, current events, etc.), ALWAYS use web_search.",
         "- Call at most one tool per response.",
         "- Never invent tool results.",
         "- If a tool is marked [confirm] or [dangerous], ask for confirmation before calling it.",
