@@ -47,6 +47,9 @@ async function main() {
     // In-memory session storage for web
     const sessions = new Map<string, ChatSession>();
 
+    // Track sessions currently running an agent loop to prevent duplicates
+    const runningSessions = new Set<string>();
+
     // WebSocket server for real-time events
     const server = app.listen(process.env.PORT ?? DEFAULT_PORT, () => {
         const port = (server.address() as import("net").AddressInfo).port;
@@ -77,7 +80,11 @@ async function main() {
 
         ws.on("close", () => {
             console.log(`WebSocket disconnected: ${sessionId}`);
-            sessions.delete(sessionId);
+            // Clean up session on disconnect to prevent stale broadcasts
+            const existing = sessions.get(sessionId);
+            if (existing && existing.ws === ws) {
+                sessions.delete(sessionId);
+            }
         });
 
         ws.on("error", (err) => {
@@ -113,25 +120,34 @@ async function main() {
             sessions.set(newId, session);
         }
 
-        // If client sent via REST but has a WS, attach it
-        // (In normal usage, WS is established first)
+        // Prevent duplicate agent loops for the same session
+        if (runningSessions.has(session.id)) {
+            console.warn(`[web] Duplicate request for session ${session.id}, skipping`);
+            res.status(429).json({ error: "Already processing" });
+            return;
+        }
 
         res.json({ sessionId: session.id });
 
         // Run agent loop asynchronously (response already sent)
-        runAgentLoop(message, session, tools, modelClient).catch((err) => {
-            console.error("Agent loop error:", err);
-            if (session?.ws && session.ws.readyState === WebSocket.OPEN) {
-                session.ws.send(
-                    JSON.stringify({
-                        type: "run_error",
-                        step: 0,
-                        stage: "model_generate" as const,
-                        error: err instanceof Error ? err.message : String(err),
-                    }),
-                );
-            }
-        });
+        runningSessions.add(session.id);
+        runAgentLoop(message, session, tools, modelClient)
+            .finally(() => {
+                runningSessions.delete(session.id);
+            })
+            .catch((err) => {
+                console.error("Agent loop error:", err);
+                if (session?.ws && session.ws.readyState === WebSocket.OPEN) {
+                    session.ws.send(
+                        JSON.stringify({
+                            type: "run_error",
+                            step: 0,
+                            stage: "model_generate" as const,
+                            error: err instanceof Error ? err.message : String(err),
+                        }),
+                    );
+                }
+            });
     });
 
     // Serve static files (built React app)

@@ -51,13 +51,6 @@ const App: React.FC = () => {
         }
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSend();
-        }
-    };
-
     const allItems: ChatMessage[] = [
         ...messages,
         ...(currentAssistantMsg ? [currentAssistantMsg] : []),
@@ -168,11 +161,10 @@ const App: React.FC = () => {
                         value={inputValue}
                         onChange={setInputValue}
                         onSubmit={handleSend}
-                        onKeyDown={handleKeyDown}
                         placeholder="输入你的问题... (Enter 发送, Shift+Enter 换行)"
                         loading={isProcessing}
                         disabled={!connected}
-                        submitType={undefined}
+                        submitType="enter"
                         autoSize={{ minRows: 1, maxRows: 6 }}
                     />
                 </div>

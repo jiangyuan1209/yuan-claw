@@ -15,7 +15,15 @@ export function useWebSocket(options: UseWebSocketOptions) {
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const connect = useCallback(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
+        // Close any existing connection before creating a new one
+        const existing = wsRef.current;
+        if (existing) {
+            existing.onclose = null; // prevent reconnection loop
+            existing.close();
+            wsRef.current = null;
+        }
+
+        // Determine WebSocket URL
 
         // Determine WebSocket URL
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
