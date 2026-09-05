@@ -10,6 +10,7 @@ import { createToolRegistry } from "../tools/registry.js";
 import { SessionStore } from "../memory/session-store.js";
 import { createWebEventBusBroadcast } from "../events/web-event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
+import { runDirectLLM } from "../agent/run-direct-llm.js";
 import { createModelClient } from "../model/client.js";
 import { ensureUserConfigInitialized } from "../config/init-user-config.js";
 import { loadAppConfig } from "../config/load-config.js";
@@ -94,9 +95,10 @@ async function main() {
 
     // REST API: send a chat message
     app.post("/api/chat", async (req, res) => {
-        const { message, sessionId } = req.body as {
+        const { message, sessionId, mode } = req.body as {
             message: string;
             sessionId?: string;
+            mode?: "agent" | "direct";
         };
 
         if (!message || typeof message !== "string") {
@@ -129,9 +131,10 @@ async function main() {
 
         res.json({ sessionId: session.id });
 
-        // Run agent loop asynchronously (response already sent)
+        // Run loop asynchronously (response already sent)
         runningSessions.add(session.id);
-        runAgentLoop(message, session, tools, modelClient)
+        const handler = mode === "direct" ? runDirectLLMHandler : runAgentLoop;
+        handler(message, session, tools, modelClient)
             .finally(() => {
                 runningSessions.delete(session.id);
             })
@@ -163,6 +166,7 @@ async function main() {
 
 type ModelClient = {
     generate: (messages: ChatMessage[]) => Promise<string>;
+    generateStream: (messages: ChatMessage[]) => AsyncIterable<string>;
 };
 
 async function runAgentLoop(
@@ -203,6 +207,43 @@ async function runAgentLoop(
         console.log(`[web] Session ${session.id}: ${result.finalMessage.slice(0, 100)}...`);
     } catch (error) {
         console.error(`[web] Session ${session.id} error:`, error);
+    }
+}
+
+async function runDirectLLMHandler(
+    userInput: string,
+    session: ChatSession,
+    _tools: Map<string, import("../tools/types.js").Tool>,
+    modelClient: ModelClient,
+) {
+    const eventBus = createWebEventBusBroadcast(
+        new Set(session.ws ? [session.ws] : []),
+    );
+
+    // Send run_start to the specific WebSocket
+    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+        session.ws.send(
+            JSON.stringify({
+                type: "run_start",
+                input: userInput,
+            }),
+        );
+    }
+
+    try {
+        const result = await runDirectLLM({
+            userInput,
+            modelClient,
+            eventBus,
+            previousMessages: session.messages,
+            onMessagesUpdated: async (messages: ChatMessage[]) => {
+                session.messages = messages;
+            },
+        });
+
+        console.log(`[web:direct] Session ${session.id}: ${result.finalMessage.slice(0, 100)}...`);
+    } catch (error) {
+        console.error(`[web:direct] Session ${session.id} error:`, error);
     }
 }
 

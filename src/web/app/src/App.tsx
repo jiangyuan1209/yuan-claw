@@ -1,11 +1,13 @@
 import React, { useRef, useEffect, useState } from "react";
-import { Layout, Button, Space, Badge, Typography, Tooltip } from "antd";
+import { Layout, Button, Space, Badge, Typography, Tooltip, Switch } from "antd";
 import { Sender } from "@ant-design/x";
 import {
     DeleteOutlined,
     WifiOutlined,
     DisconnectOutlined,
     ReloadOutlined,
+    RobotOutlined,
+    MessageOutlined,
 } from "@ant-design/icons";
 import { useChat } from "./hooks/useChat";
 import { MessageBubble } from "./components/MessageBubble";
@@ -34,8 +36,11 @@ const App: React.FC = () => {
     const {
         messages,
         isProcessing,
+        isStreaming,
         currentAssistantMsg,
         connected,
+        mode,
+        setMode,
         sendMessage,
         clearMessages,
         reconnect,
@@ -75,6 +80,21 @@ const App: React.FC = () => {
                     </Title>
                 </Space>
                 <Space>
+                    <Tooltip title={mode === "agent" ? "Agent 模式（工具调用）" : "直连模式（流式输出）"}>
+                        <Space size={4}>
+                            {mode === "agent" ? (
+                                <RobotOutlined style={{ color: "#1677ff", fontSize: 16 }} />
+                            ) : (
+                                <MessageOutlined style={{ color: "#ff7a45", fontSize: 16 }} />
+                            )}
+                            <Switch
+                                size="small"
+                                checked={mode === "direct"}
+                                onChange={(checked) => setMode(checked ? "direct" : "agent")}
+                                disabled={isProcessing}
+                            />
+                        </Space>
+                    </Tooltip>
                     <Tooltip title={connected ? "已连接" : "未连接"}>
                         <Badge dot={connected} color={connected ? "green" : "red"}>
                             {connected ? (
@@ -144,6 +164,10 @@ const App: React.FC = () => {
                                         !msg.content &&
                                         isProcessing
                                     }
+                                    isStreaming={
+                                        msg.id === currentAssistantMsg?.id &&
+                                        isStreaming
+                                    }
                                 />
                             ))}
                         </div>
@@ -161,7 +185,11 @@ const App: React.FC = () => {
                         value={inputValue}
                         onChange={setInputValue}
                         onSubmit={handleSend}
-                        placeholder="输入你的问题... (Enter 发送, Shift+Enter 换行)"
+                        placeholder={
+                            mode === "direct"
+                                ? "直连模式 — 输入问题，流式回答... (Enter 发送)"
+                                : "输入你的问题... (Enter 发送, Shift+Enter 换行)"
+                        }
                         loading={isProcessing}
                         disabled={!connected}
                         submitType="enter"

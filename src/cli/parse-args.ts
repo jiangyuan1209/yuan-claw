@@ -6,6 +6,7 @@ export type CliArgs = {
     model?: string;
     json: boolean;
     quiet: boolean;
+    direct: boolean;
     help: boolean;
 };
 
@@ -16,6 +17,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
     let model: string | undefined;
     let json = false;
     let quiet = false;
+    let direct = false;
     let help = false;
 
     const positional: string[] = [];
@@ -79,6 +81,11 @@ export function parseCliArgs(argv: string[]): CliArgs {
             continue;
         }
 
+        if (arg === "--direct") {
+            direct = true;
+            continue;
+        }
+
         if (arg === "--help" || arg === "-h") {
             help = true;
             continue;
@@ -98,6 +105,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
         model,
         json,
         quiet,
+        direct,
         help,
     };
 }

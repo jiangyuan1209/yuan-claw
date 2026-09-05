@@ -1,14 +1,23 @@
 import { useState, useCallback, useRef } from "react";
 import { message as antdMessage } from "antd";
-import type { AgentEvent, ChatMessage, ToolEvent } from "../types";
+import type { AgentEvent, ChatMessage, ChatMode, ToolEvent } from "../types";
 import { useWebSocket } from "./useWebSocket";
 
 export function useChat() {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isStreaming, setIsStreaming] = useState(false);
     const [currentAssistantMsg, setCurrentAssistantMsg] = useState<ChatMessage | null>(null);
+    const [mode, setMode] = useState<ChatMode>("agent");
     const currentToolEvents = useRef<Map<string, ToolEvent>>(new Map());
     const sessionIdRef = useRef<string | null>(null);
+    const modeRef = useRef<ChatMode>("agent");
+
+    // Keep modeRef in sync with mode state
+    const updateMode = useCallback((newMode: ChatMode) => {
+        setMode(newMode);
+        modeRef.current = newMode;
+    }, []);
 
     const handleEvent = useCallback((event: AgentEvent) => {
         switch (event.type) {
@@ -29,6 +38,23 @@ export function useChat() {
                 };
                 setCurrentAssistantMsg(assistantMsg);
                 break;
+
+            case "streaming_token": {
+                if (event.done) {
+                    setIsStreaming(false);
+                    break;
+                }
+                setIsStreaming(true);
+                // Append token to the current assistant message content
+                setCurrentAssistantMsg((prev) => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        content: prev.content + event.text,
+                    };
+                });
+                break;
+            }
 
             case "tool_start": {
                 const toolEvent: ToolEvent = {
@@ -107,10 +133,12 @@ export function useChat() {
 
             case "run_end":
                 setIsProcessing(false);
+                setIsStreaming(false);
                 break;
 
             case "run_error":
                 setIsProcessing(false);
+                setIsStreaming(false);
                 antdMessage.error(`处理出错: ${event.error}`);
                 break;
         }
@@ -149,6 +177,7 @@ export function useChat() {
                 body: JSON.stringify({
                     message: content.trim(),
                     sessionId: sessionIdRef.current,
+                    mode: modeRef.current,
                 }),
             }).catch((err) => {
                 antdMessage.error(`发送失败: ${err.message}`);
@@ -167,9 +196,12 @@ export function useChat() {
     return {
         messages,
         isProcessing,
+        isStreaming,
         currentAssistantMsg,
         connected,
         sessionId,
+        mode,
+        setMode: updateMode,
         sendMessage,
         clearMessages,
         reconnect,

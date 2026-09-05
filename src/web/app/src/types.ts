@@ -12,6 +12,7 @@ export type AgentEvent =
       }
     | { type: "tool_error"; toolName: string; error: string; step: number }
     | { type: "assistant"; message: string }
+    | { type: "streaming_token"; text: string; done: boolean }
     | {
           type: "run_error";
           step: number;
@@ -19,6 +20,8 @@ export type AgentEvent =
           error: string;
       }
     | { type: "run_end"; reason: string; step: number };
+
+export type ChatMode = "agent" | "direct";
 
 export type ChatMessage = {
     id: string;

@@ -11,6 +11,7 @@ export type AgentEvent =
 }
     | { type: "tool_error"; toolName: string; error: string; step: number }
     | { type: "assistant"; message: string }
+    | { type: "streaming_token"; text: string; done: boolean }
     | {
     type: "run_error";
     step: number;
@@ -82,6 +83,19 @@ export function createConsoleEventBus(
             }
 
             if (quiet || !debug) {
+                // Streaming tokens: typewriter output directly to stdout
+                if (event.type === "streaming_token") {
+                    // Hide any processing indicator before first token
+                    if (processingTimer) {
+                        hideProcessing();
+                    }
+                    process.stdout.write(event.text);
+                    if (event.done) {
+                        process.stdout.write("\n");
+                    }
+                    return;
+                }
+
                 // Non-debug mode: only show final results and errors
                 if (event.type === "assistant") {
                     console.log(event.message);
@@ -132,6 +146,16 @@ export function createConsoleEventBus(
                 case "assistant":
                     console.log(`\n[assistant]`);
                     console.log(event.message);
+                    break;
+
+                case "streaming_token":
+                    if (processingTimer) {
+                        hideProcessing();
+                    }
+                    process.stdout.write(event.text);
+                    if (event.done) {
+                        process.stdout.write("\n");
+                    }
                     break;
 
                 case "run_error":

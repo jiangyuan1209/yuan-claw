@@ -101,5 +101,30 @@ export function createOpenAICompatibleClient(
 
             return text;
         },
+
+        /**
+         * Streaming generation — returns an async iterable of text chunks.
+         * Each yielded value is a string fragment (delta) from the model.
+         */
+        async *generateStream(
+            messages: ChatMessage[]
+        ): AsyncIterable<string> {
+            const stream = await client.chat.completions.create({
+                model,
+                messages: messages.map((message) => ({
+                    role: message.role === "tool" ? "user" : message.role,
+                    content: message.content,
+                })),
+                temperature: 0,
+                stream: true,
+            });
+
+            for await (const chunk of stream) {
+                const delta = chunk.choices[0]?.delta?.content;
+                if (delta) {
+                    yield delta;
+                }
+            }
+        },
     };
 }

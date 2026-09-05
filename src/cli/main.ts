@@ -8,6 +8,7 @@ import { createToolRegistry } from "../tools/registry.js";
 import { SessionStore } from "../memory/session-store.js";
 import { createConsoleEventBus } from "../events/event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
+import { runDirectLLM } from "../agent/run-direct-llm.js";
 import type { ApprovalDecision } from "../agent/read-approval.js";
 import { createModelClient } from "../model/client.js";
 import { ensureUserConfigInitialized } from "../config/init-user-config.js";
@@ -71,6 +72,7 @@ async function main() {
             json: args.json,
             quiet: args.quiet,
             maxSteps: args.maxSteps,
+            direct: args.direct,
             config,
         });
         return;
@@ -97,24 +99,44 @@ async function main() {
         config,
     });
 
-    const result = await runLocalAgentLoop({
-        userInput: args.userInput,
-        modelClient,
-        tools,
-        eventBus,
-        maxSteps: args.maxSteps ?? 30,
-        previousMessages: previousSession?.messages ?? [],
-        approvalMode: "ask",
-        requestApproval: requestApprovalFromConsole,
-        onMessagesUpdated: args.sessionId
-            ? async (messages: ChatMessage[]) => {
-                await sessionStore.save(args.sessionId!, messages);
-            }
-            : undefined,
-    });
+    if (args.direct) {
+        // Direct LLM mode — streaming, no tool calls
+        const result = await runDirectLLM({
+            userInput: args.userInput,
+            modelClient,
+            eventBus,
+            previousMessages: previousSession?.messages ?? [],
+            onMessagesUpdated: args.sessionId
+                ? async (messages: ChatMessage[]) => {
+                    await sessionStore.save(args.sessionId!, messages);
+                }
+                : undefined,
+        });
 
-    if (!args.quiet) {
-        console.log(result.finalMessage);
+        if (!args.quiet) {
+            // Streaming already printed the response, but print newline if needed
+        }
+    } else {
+        // Agent mode — tool-calling loop
+        const result = await runLocalAgentLoop({
+            userInput: args.userInput,
+            modelClient,
+            tools,
+            eventBus,
+            maxSteps: args.maxSteps ?? 30,
+            previousMessages: previousSession?.messages ?? [],
+            approvalMode: "ask",
+            requestApproval: requestApprovalFromConsole,
+            onMessagesUpdated: args.sessionId
+                ? async (messages: ChatMessage[]) => {
+                    await sessionStore.save(args.sessionId!, messages);
+                }
+                : undefined,
+        });
+
+        if (!args.quiet) {
+            console.log(result.finalMessage);
+        }
     }
 }
 

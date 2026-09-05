@@ -1,10 +1,30 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { Tag, Tooltip, Typography, Avatar } from "antd";
 import { CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { Bubble } from "@ant-design/x";
 import type { ChatMessage, ToolEvent } from "../types";
 
 const { Text } = Typography;
+
+// Inject blinking cursor keyframes once
+const CURSOR_STYLE_ID = "yuan-claw-cursor-blink";
+function useCursorStyle() {
+    const injected = useRef(false);
+    useEffect(() => {
+        if (injected.current) return;
+        injected.current = true;
+        if (document.getElementById(CURSOR_STYLE_ID)) return;
+        const style = document.createElement("style");
+        style.id = CURSOR_STYLE_ID;
+        style.textContent = `
+            @keyframes cursor-blink {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }, []);
+}
 
 function ToolStatusBadge({ event }: { event: ToolEvent }) {
     const icon =
@@ -79,12 +99,15 @@ function ToolEventsBar({ events }: { events: ToolEvent[] }) {
 interface MessageBubbleProps {
     message: ChatMessage;
     isTyping?: boolean;
+    isStreaming?: boolean;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
     message,
     isTyping = false,
+    isStreaming = false,
 }) => {
+    useCursorStyle();
     const isUser = message.role === "user";
 
     const avatarEl = (
@@ -107,6 +130,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 {message.content ? (
                     <Text style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
                         {message.content}
+                        {isStreaming && (
+                            <span
+                                style={{
+                                    display: "inline-block",
+                                    width: 2,
+                                    height: "1em",
+                                    background: "#1677ff",
+                                    marginLeft: 2,
+                                    verticalAlign: "text-bottom",
+                                    animation: "cursor-blink 1s step-end infinite",
+                                }}
+                            />
+                        )}
                     </Text>
                 ) : isTyping ? (
                     <Text type="secondary">

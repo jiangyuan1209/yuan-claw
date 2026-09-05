@@ -9,6 +9,7 @@ import {
     runLocalAgentLoop,
     type ApprovalMode,
 } from "../agent/run-local-agent-loop.js";
+import { runDirectLLM } from "../agent/run-direct-llm.js";
 import type { ApprovalDecision } from "../agent/read-approval.js";
 import { createModelClient } from "../model/client.js";
 import type { AppConfig } from "../config/load-config.js";
@@ -20,6 +21,7 @@ type StartReplOptions = {
     quiet?: boolean;
     maxSteps?: number;
     debug?: boolean;
+    direct?: boolean;
     config: AppConfig;
 };
 
@@ -50,6 +52,7 @@ export async function startRepl(options: StartReplOptions) {
     let messages: ChatMessage[] = [];
     let approvalMode: ApprovalMode = "ask";
     let debugMode = options.debug ?? false;
+    let chatMode: "agent" | "direct" = options.direct ? "direct" : "agent";
 
     async function requestApproval(message: string): Promise<ApprovalDecision> {
         const result = await select<ApprovalDecision>({
@@ -100,10 +103,10 @@ export async function startRepl(options: StartReplOptions) {
         let userInput: string | null;
 
         try {
-            const promptLabel =
-                approvalMode === "always-allow"
-                    ? "yuan-claw[always]> "
-                    : "yuan-claw[ask]> ";
+            const modeLabel = chatMode === "direct" ? "direct" : approvalMode === "always-allow"
+                    ? "always"
+                    : "ask";
+            const promptLabel = `yuan-claw[${modeLabel}]> `;
 
             userInput = await readUserInput(promptLabel);
         } catch {
@@ -129,6 +132,7 @@ Commands:
   /clear   Clear current session history and reset approval mode
   /save    Save current session
   /reset   Reset approval mode to ask
+  /mode    Toggle between agent mode and direct LLM mode
   /status  Show current session status
   /debug   Toggle debug mode (show/hide intermediate steps)
 `);
@@ -138,7 +142,8 @@ Commands:
         if (userInput === "/clear") {
             messages = [];
             approvalMode = "ask";
-            console.log("Session history cleared. Approval mode reset to ask.");
+            chatMode = "agent";
+            console.log("Session history cleared. Mode reset to agent.");
             continue;
         }
 
@@ -156,6 +161,7 @@ Commands:
 
         if (userInput === "/status") {
             console.log(`sessionId: ${sessionId}`);
+            console.log(`chatMode: ${chatMode}`);
             console.log(`approvalMode: ${approvalMode}`);
             console.log(`messageCount: ${messages.length}`);
             console.log(`debugMode: ${debugMode}`);
@@ -168,6 +174,16 @@ Commands:
             continue;
         }
 
+        if (userInput === "/mode") {
+            chatMode = chatMode === "agent" ? "direct" : "agent";
+            if (chatMode === "direct") {
+                console.log("已切换到直连大模型模式（流式输出，无工具调用）。");
+            } else {
+                console.log("已切换到 Agent 模式（工具调用）。");
+            }
+            continue;
+        }
+
         const eventBus = createConsoleEventBus({
             json: options.json,
             quiet: options.quiet,
@@ -175,24 +191,44 @@ Commands:
         });
 
         try {
-            const result = await runLocalAgentLoop({
-                userInput,
-                modelClient,
-                tools,
-                eventBus,
-                maxSteps: options.maxSteps ?? 30,
-                previousMessages: messages,
-                approvalMode,
-                requestApproval,
-                onMessagesUpdated: async (updatedMessages: ChatMessage[]) => {
-                    messages = updatedMessages;
-                },
-            });
+            if (chatMode === "direct") {
+                // Direct LLM mode — streaming, no tool calls
+                const result = await runDirectLLM({
+                    userInput,
+                    modelClient,
+                    eventBus,
+                    previousMessages: messages,
+                    onMessagesUpdated: async (updatedMessages: ChatMessage[]) => {
+                        messages = updatedMessages;
+                    },
+                });
 
-            approvalMode = result.approvalMode;
+                // In non-quiet mode, the streaming tokens already printed the response.
+                // In quiet mode, print the final message explicitly.
+                if (options.quiet) {
+                    console.log(result.finalMessage);
+                }
+            } else {
+                // Agent mode — tool-calling loop
+                const result = await runLocalAgentLoop({
+                    userInput,
+                    modelClient,
+                    tools,
+                    eventBus,
+                    maxSteps: options.maxSteps ?? 30,
+                    previousMessages: messages,
+                    approvalMode,
+                    requestApproval,
+                    onMessagesUpdated: async (updatedMessages: ChatMessage[]) => {
+                        messages = updatedMessages;
+                    },
+                });
 
-            if (!options.quiet) {
-                console.log(result.finalMessage);
+                approvalMode = result.approvalMode;
+
+                if (!options.quiet) {
+                    console.log(result.finalMessage);
+                }
             }
         } catch (error) {
             console.error(error);
