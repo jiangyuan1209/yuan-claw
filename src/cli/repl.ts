@@ -49,6 +49,18 @@ export async function startRepl(options: StartReplOptions) {
         config: options.config,
     });
 
+    /**
+     * ===== 对话记忆（跨轮次） =====
+     *
+     * messages 变量在 REPL 整个生命周期内持续存在，是 CLI 模式的对话记忆。
+     * 每次用户输入后，这个数组会被传入 runLocalAgentLoop / runDirectLLM 的 previousMessages，
+     * 使 LLM 能看到之前所有轮次的对话历史。
+     *
+     * 每次 Agent 循环 / 直连调用完成后，通过 onMessagesUpdated 回调更新此数组，
+     * 将本次问答（包括中间步骤）追加进来，供下一轮使用。
+     *
+     * /clear 命令会清空此数组，相当于重置对话记忆。
+     */
     let messages: ChatMessage[] = [];
     let approvalMode: ApprovalMode = "ask";
     let debugMode = options.debug ?? false;

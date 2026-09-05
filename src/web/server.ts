@@ -25,6 +25,18 @@ const DEFAULT_PORT = 3000;
 
 type ChatSession = {
     id: string;
+    /**
+     * ===== Web 端的对话记忆 =====
+     *
+     * 每个 WebSocket 连接对应一个 ChatSession，messages 数组存储该会话的完整对话历史。
+     * 每次用户发消息时，这个数组会被传入 runLocalAgentLoop / runDirectLLM 的 previousMessages，
+     * 使 LLM 能看到同一会话中之前所有轮次的对话上下文。
+     *
+     * Agent 循环 / 直连调用完成后，通过 onMessagesUpdated 回调更新此数组，
+     * 将本次问答（Agent 模式下还包括中间步骤）追加进来，供下一轮使用。
+     *
+     * 注意：session 是内存级别的，服务重启后对话记忆丢失。
+     */
     messages: ChatMessage[];
     ws: WebSocket | null;
 };

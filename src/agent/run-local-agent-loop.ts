@@ -20,7 +20,16 @@ export type RunLocalAgentLoopParams = {
     tools: Map<string, Tool>;
     eventBus: EventBus;
     maxSteps?: number;
+    /**
+     * 对话记忆：传入之前轮次的历史消息。
+     * CLI REPL 中为跨轮次累积的 messages 数组，Web 端为 session.messages。
+     * 这样 LLM 能看到之前的对话上下文，实现跨轮次的对话记忆。
+     */
     previousMessages?: ChatMessage[];
+    /**
+     * 对话记忆持久化回调：每次 messages 数组更新时调用，
+     * 用于将最新的消息历史写回到调用方的存储中（REPL 的变量 / Web 的 session）。
+     */
     onMessagesUpdated?: (messages: ChatMessage[]) => Promise<void>;
     approvalMode?: ApprovalMode;
     requestApproval?: (message: string) => Promise<ApprovalDecision>;
@@ -92,6 +101,22 @@ export async function runLocalAgentLoop(
         (message) => message.role !== "system",
     );
 
+    /**
+     * ===== 多步骤记忆（Agent 模式特有） =====
+     *
+     * messages 数组是整个 Agent 循环的"记忆核心"。
+     * 初始内容：[system prompt, ...历史对话, 本次用户输入]
+     *
+     * 在后续的 for 循环中，每一步都会往这个数组追加新消息：
+     *   - LLM 的原始输出（assistant）
+     *   - 工具执行结果（user 角色，携带 tool result）
+     *   - 解析错误的纠正提示
+     *   - 确认请求的用户回复
+     *
+     * 每次调用 modelClient.generate(messages) 时，LLM 都能看到完整的 messages 数组，
+     * 因此它"记得"之前每一步做了什么、工具返回了什么、用户说了什么。
+     * 这就是 Agent 单次多步骤任务的记忆机制。
+     */
     const messages: ChatMessage[] = [
         {
             role: "system",
