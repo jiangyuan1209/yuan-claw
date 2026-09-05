@@ -207,6 +207,8 @@ async function runAgentLoop(
             modelClient,
             tools,
             eventBus,
+            // Agent 多步骤上限：硬编码 30 步（Web 端不支持 --max-steps 参数）。
+            // 仅限制单次任务内的步骤数，不影响跨轮次的对话记忆。
             maxSteps: 30,
             previousMessages: session.messages,
             approvalMode: "always-allow",

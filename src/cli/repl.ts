@@ -227,6 +227,8 @@ Commands:
                     modelClient,
                     tools,
                     eventBus,
+                    // Agent 多步骤上限：默认 30 步，可通过 --max-steps 参数覆盖。
+                    // 仅限制单次任务内的步骤数，不影响跨轮次的对话记忆。
                     maxSteps: options.maxSteps ?? 30,
                     previousMessages: messages,
                     approvalMode,

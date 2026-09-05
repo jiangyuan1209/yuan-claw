@@ -67,6 +67,13 @@ export async function runDirectLLM(
      *
      * 流式输出完成后，assistant 回复会被追加到 messages 数组并持久化，
      * 供下一轮对话作为 historyMessages 使用。
+     *
+     * ===== 轮次大小限制 =====
+     *
+     * 多步骤上限：无（直连模式只有单次 LLM 调用，不存在步骤循环）。
+     * 对话记忆上限：⚠️ 当前无限制！previousMessages 的全部历史都会注入 messages，
+     *   然后整体发给 LLM。长时间对话可能导致超出 LLM 上下文窗口。
+     *   与 Agent 模式相同，trimMessages 仅在持久化到磁盘时使用，未在发给 LLM 前调用。
      */
     const messages: ChatMessage[] = [
         ...historyMessages,

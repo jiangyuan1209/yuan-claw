@@ -19,6 +19,20 @@ export type RunLocalAgentLoopParams = {
     modelClient: ModelClient;
     tools: Map<string, Tool>;
     eventBus: EventBus;
+    /**
+     * ===== Agent 多步骤记忆的上限 =====
+     *
+     * Agent 循环最多执行的步数。每一步包括：调 LLM → 解析响应 → 执行工具 → 将结果追加到 messages。
+     * 超过此限制后循环终止并抛出错误（reason: "max_steps_exceeded"）。
+     *
+     * 默认值 8（函数签名处），但实际调用方均覆盖为 30：
+     *   - CLI REPL: maxSteps = options.maxSteps ?? 30（可通过 --max-steps 覆盖）
+     *   - CLI 单次: maxSteps = args.maxSteps ?? 30
+     *   - Web 服务端: maxSteps = 30（硬编码）
+     *
+     * 注意：这是单次用户任务内的步骤上限，不是跨轮次的对话记忆限制。
+     * 跨轮次的对话记忆通过 previousMessages 传入，目前无轮次大小限制。
+     */
     maxSteps?: number;
     /**
      * 对话记忆：传入之前轮次的历史消息。
@@ -51,6 +65,13 @@ function trimText(text: string, maxChars: number): string {
     return `${text.slice(0, maxChars)}\n...[truncated]`;
 }
 
+/**
+ * ===== 单条工具结果的长度限制 =====
+ *
+ * 工具执行结果在注入 messages 前会被截断到 maxChars 个字符（默认 12000），
+ * 防止单次工具输出过大占满 LLM 上下文窗口。
+ * 这是对"单条消息内容"的长度限制，不影响消息条数。
+ */
 function formatToolResultForModel(result: unknown, maxChars = 12000): string {
     return trimText(stringifyForModel(result), maxChars);
 }
@@ -116,6 +137,14 @@ export async function runLocalAgentLoop(
      * 每次调用 modelClient.generate(messages) 时，LLM 都能看到完整的 messages 数组，
      * 因此它"记得"之前每一步做了什么、工具返回了什么、用户说了什么。
      * 这就是 Agent 单次多步骤任务的记忆机制。
+     *
+     * ===== 轮次大小限制 =====
+     *
+     * 多步骤上限：由 maxSteps 控制（见参数注释），超出后循环终止。
+     * 对话记忆上限：⚠️ 当前无限制！previousMessages 的全部历史都会注入 messages，
+     *   然后整体发给 LLM。长时间对话可能导致超出 LLM 上下文窗口。
+     *   trimMessages / prepareMessagesForModel 函数已实现截断逻辑，
+     *   但仅在 SessionStore.save() 持久化到磁盘时使用，未在发给 LLM 前调用。
      */
     const messages: ChatMessage[] = [
         {
@@ -132,6 +161,8 @@ export async function runLocalAgentLoop(
     await persistMessages(messages, onMessagesUpdated);
 
     try {
+        // Agent 多步骤循环：每步调 LLM → 解析 → 执行工具 → 追加结果到 messages。
+        // 循环上限为 maxSteps 步，超出后抛出错误。
         for (let step = 1; step <= maxSteps; step += 1) {
         let rawOutput: string;
 

@@ -22,11 +22,24 @@ export interface CompactValueOptions {
     maxDepth?: number;
 }
 
+/**
+ * ===== 对话记忆截断选项 =====
+ *
+ * 用于控制对话历史在持久化到磁盘时的截断策略。
+ * 注意：当前这些截断逻辑仅在 SessionStore.save() 中被调用，
+ * 在 runLocalAgentLoop / runDirectLLM 发给 LLM 之前并未调用，
+ * 即运行时的对话记忆没有轮次大小限制，仅持久化时截断。
+ */
 export interface TrimMessagesOptions {
+    /** 保留的最大消息条数（默认 24），超出后丢弃最早的消息 */
     maxMessages?: number;
+    /** 保留的最大总字符数（默认 24000），超出后从旧消息开始截断 */
     maxTotalChars?: number;
+    /** 是否始终保留 system 角色的消息（默认 true） */
     preserveSystemMessages?: boolean;
+    /** 始终保留最近 N 条消息不被截断（默认 8） */
     preserveRecentMessages?: number;
+    /** 是否压缩旧的工具调用消息（默认 true），压缩后只保留摘要 */
     compactToolMessages?: boolean;
 }
 
@@ -40,8 +53,11 @@ const DEFAULT_VALUE_MAX_ARRAY_ITEMS = 20;
 const DEFAULT_VALUE_MAX_OBJECT_KEYS = 40;
 const DEFAULT_VALUE_MAX_DEPTH = 6;
 
+/** 对话记忆截断的默认值：最多保留 24 条消息 */
 const DEFAULT_MAX_MESSAGES = 24;
+/** 对话记忆截断的默认值：总字符数不超过 24000 */
 const DEFAULT_MAX_TOTAL_CHARS = 24_000;
+/** 对话记忆截断的默认值：始终保留最近 8 条消息 */
 const DEFAULT_PRESERVE_RECENT_MESSAGES = 8;
 
 export function truncateText(
@@ -253,6 +269,20 @@ function safeJsonParse(text: string): unknown | null {
     }
 }
 
+/**
+ * 截断对话历史消息列表，控制记忆大小。
+ *
+ * 截断策略：
+ *   1. 保留 system 消息（如果 preserveSystemMessages=true）
+ *   2. 将旧消息压缩（compactMessage）以减小体积
+ *   3. 始终保留最近 N 条消息（preserveRecentMessages）
+ *   4. 总条数不超过 maxMessages，超出则丢弃最早的
+ *   5. 总字符数不超过 maxTotalChars，超出则从旧消息开始截断内容
+ *
+ * 当前调用位置：仅在 SessionStore.save() 持久化到磁盘时调用。
+ * ⚠️ 未在 runLocalAgentLoop / runDirectLLM 发给 LLM 前调用，
+ *    即运行时对话记忆没有轮次限制，可能导致长对话超出 LLM 上下文窗口。
+ */
 export function trimMessages(
     messages: ChatMessage[],
     options: TrimMessagesOptions = {},
@@ -345,6 +375,13 @@ export function trimMessages(
     return trimmed.reverse();
 }
 
+/**
+ * 在发给 LLM 之前准备消息列表（截断 + 压缩）。
+ *
+ * ⚠️ 当前未被调用！此函数已实现但 runLocalAgentLoop / runDirectLLM
+ * 在调用 modelClient.generate(messages) 前并未使用它。
+ * 如需为运行时对话记忆添加轮次限制，应在发给 LLM 前调用此函数。
+ */
 export function prepareMessagesForModel(
     messages: ChatMessage[],
     options: TrimMessagesOptions = {},

@@ -123,6 +123,7 @@ async function main() {
             modelClient,
             tools,
             eventBus,
+            // Agent 多步骤上限：默认 30 步，可通过 --max-steps 参数覆盖。
             maxSteps: args.maxSteps ?? 30,
             previousMessages: previousSession?.messages ?? [],
             approvalMode: "ask",
