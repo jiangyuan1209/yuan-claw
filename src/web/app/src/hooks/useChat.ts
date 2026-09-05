@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { message as antdMessage } from "antd";
-import type { AgentEvent, ChatMessage, ChatMode, ToolEvent } from "../types";
+import type { AgentEvent, ChatMessage, ChatMode, DebugEvent, ToolEvent } from "../types";
 import { useWebSocket } from "./useWebSocket";
 
 export function useChat() {
@@ -9,7 +9,9 @@ export function useChat() {
     const [isStreaming, setIsStreaming] = useState(false);
     const [currentAssistantMsg, setCurrentAssistantMsg] = useState<ChatMessage | null>(null);
     const [mode, setMode] = useState<ChatMode>("agent");
+    const [debug, setDebug] = useState(false);
     const currentToolEvents = useRef<Map<string, ToolEvent>>(new Map());
+    const currentDebugEvents = useRef<DebugEvent[]>([]);
     const sessionIdRef = useRef<string | null>(null);
     const modeRef = useRef<ChatMode>("agent");
 
@@ -28,6 +30,7 @@ export function useChat() {
             case "run_start":
                 setIsProcessing(true);
                 currentToolEvents.current.clear();
+                currentDebugEvents.current = [];
                 // Create a placeholder assistant message
                 const assistantMsg: ChatMessage = {
                     id: `assistant-${Date.now()}`,
@@ -35,9 +38,24 @@ export function useChat() {
                     content: "",
                     timestamp: Date.now(),
                     toolEvents: [],
+                    debugEvents: [],
                 };
                 setCurrentAssistantMsg(assistantMsg);
                 break;
+
+            case "model_raw": {
+                const debugEvent: DebugEvent = {
+                    step: event.step,
+                    text: event.text,
+                };
+                currentDebugEvents.current = [...currentDebugEvents.current, debugEvent];
+                setCurrentAssistantMsg((prev) =>
+                    prev
+                        ? { ...prev, debugEvents: currentDebugEvents.current }
+                        : prev,
+                );
+                break;
+            }
 
             case "streaming_token": {
                 if (event.done) {
@@ -125,6 +143,7 @@ export function useChat() {
                         content: event.message,
                         timestamp: Date.now(),
                         toolEvents: prev?.toolEvents ?? [],
+                        debugEvents: prev?.debugEvents ?? [],
                     };
                     setMessages((prevMsgs) => [...prevMsgs, msg]);
                     return null;
@@ -191,6 +210,7 @@ export function useChat() {
         setMessages([]);
         setCurrentAssistantMsg(null);
         currentToolEvents.current.clear();
+        currentDebugEvents.current = [];
     }, []);
 
     return {
@@ -202,6 +222,8 @@ export function useChat() {
         sessionId,
         mode,
         setMode: updateMode,
+        debug,
+        setDebug,
         sendMessage,
         clearMessages,
         reconnect,

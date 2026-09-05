@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from "react";
-import { Tag, Tooltip, Typography, Avatar } from "antd";
-import { CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { Tag, Tooltip, Typography, Avatar, Collapse } from "antd";
+import { CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, CodeOutlined } from "@ant-design/icons";
 import { Bubble } from "@ant-design/x";
-import type { ChatMessage, ToolEvent } from "../types";
+import type { ChatMessage, DebugEvent, ToolEvent } from "../types";
 
 const { Text } = Typography;
 
@@ -96,16 +96,62 @@ function ToolEventsBar({ events }: { events: ToolEvent[] }) {
     );
 }
 
+function DebugEventsPanel({ events }: { events: DebugEvent[] }) {
+    if (!events.length) return null;
+
+    const items = events.map((event) => ({
+        key: String(event.step),
+        label: (
+            <span>
+                <CodeOutlined style={{ marginRight: 6 }} />
+                Step {event.step} — 模型原始输出
+            </span>
+        ),
+        children: (
+            <pre
+                style={{
+                    margin: 0,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    maxHeight: 300,
+                    overflowY: "auto",
+                    background: "#f6f8fa",
+                    padding: 8,
+                    borderRadius: 4,
+                }}
+            >
+                {event.text}
+            </pre>
+        ),
+    }));
+
+    return (
+        <Collapse
+            size="small"
+            style={{
+                marginBottom: 8,
+                background: "#fffbe6",
+                borderColor: "#ffe58f",
+            }}
+            items={items}
+        />
+    );
+}
+
 interface MessageBubbleProps {
     message: ChatMessage;
     isTyping?: boolean;
     isStreaming?: boolean;
+    debug?: boolean;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
     message,
     isTyping = false,
     isStreaming = false,
+    debug = false,
 }) => {
     useCursorStyle();
     const isUser = message.role === "user";
@@ -123,6 +169,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
     const content = (
         <div>
+            {debug && message.debugEvents && message.debugEvents.length > 0 && (
+                <DebugEventsPanel events={message.debugEvents} />
+            )}
             {message.toolEvents && message.toolEvents.length > 0 && (
                 <ToolEventsBar events={message.toolEvents} />
             )}

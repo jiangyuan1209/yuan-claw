@@ -23,12 +23,18 @@ export type AgentEvent =
 
 export type ChatMode = "agent" | "direct";
 
+export type DebugEvent = {
+    step: number;
+    text: string;
+};
+
 export type ChatMessage = {
     id: string;
     role: "user" | "assistant";
     content: string;
     timestamp: number;
     toolEvents?: ToolEvent[];
+    debugEvents?: DebugEvent[];
 };
 
 export type ToolEvent = {

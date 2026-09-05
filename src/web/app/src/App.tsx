@@ -8,6 +8,7 @@ import {
     ReloadOutlined,
     RobotOutlined,
     MessageOutlined,
+    BugOutlined,
 } from "@ant-design/icons";
 import { useChat } from "./hooks/useChat";
 import { MessageBubble } from "./components/MessageBubble";
@@ -41,6 +42,8 @@ const App: React.FC = () => {
         connected,
         mode,
         setMode,
+        debug,
+        setDebug,
         sendMessage,
         clearMessages,
         reconnect,
@@ -95,6 +98,19 @@ const App: React.FC = () => {
                             />
                         </Space>
                     </Tooltip>
+                    {mode === "agent" && (
+                        <Tooltip title={debug ? "Debug 模式已开启（显示中间步骤）" : "开启 Debug 模式"}>
+                            <Button
+                                size="small"
+                                type={debug ? "primary" : "default"}
+                                icon={<BugOutlined />}
+                                onClick={() => setDebug(!debug)}
+                                style={debug ? { background: "#faad14", borderColor: "#faad14" } : {}}
+                            >
+                                Debug
+                            </Button>
+                        </Tooltip>
+                    )}
                     <Tooltip title={connected ? "已连接" : "未连接"}>
                         <Badge dot={connected} color={connected ? "green" : "red"}>
                             {connected ? (
@@ -168,6 +184,7 @@ const App: React.FC = () => {
                                         msg.id === currentAssistantMsg?.id &&
                                         isStreaming
                                     }
+                                    debug={debug}
                                 />
                             ))}
                         </div>
