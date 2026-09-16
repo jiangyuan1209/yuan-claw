@@ -7,9 +7,12 @@ export function buildSkillsPrompt(skills: Skill[]): string {
         const lines: string[] = [];
 
         lines.push(`Skill Name: ${skill.name}`);
+        lines.push(`Skill Directory: ${skill.dir}`);
         if (skill.description) lines.push(`Description: ${skill.description}`);
         if (skill.tags.length) lines.push(`Tags: ${skill.tags.join(", ")}`);
         if (skill.license) lines.push(`License: ${skill.license}`);
+        lines.push("");
+        lines.push(`NOTE: Scripts and resources referenced in this skill are located relative to the skill directory above. Use absolute paths (e.g., ${skill.dir}/scripts/xxx.py) when executing them.`);
         lines.push("");
         lines.push("[SKILL CONTENT BEGIN]");
         lines.push(skill.body);
