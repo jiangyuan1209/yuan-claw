@@ -1,5 +1,12 @@
 export type AgentEvent =
     | { type: "run_start"; input: string }
+    | {
+        type: "planning";
+        selectedSkills: string[];
+        plan: string;
+        taskAnalysis: string;
+        fallback: boolean;
+    }
     | { type: "model_raw"; text: string; step: number }
     | { type: "tool_start"; toolName: string; args: unknown; step: number }
     | {
@@ -121,6 +128,19 @@ export function createConsoleEventBus(
             switch (event.type) {
                 case "run_start":
                     console.log(`\n[run_start] ${event.input}`);
+                    break;
+
+                case "planning":
+                    console.log(`\n[planning] 任务分析: ${event.taskAnalysis}`);
+                    if (event.fallback) {
+                        console.log(`[planning] ⚠️  规划失败，降级加载所有 skill (最多 3 个)`);
+                    }
+                    if (event.selectedSkills.length > 0) {
+                        console.log(`[planning] 选中 Skill: [${event.selectedSkills.join(", ")}]`);
+                    } else {
+                        console.log(`[planning] 无需加载 Skill`);
+                    }
+                    console.log(`[planning] 执行计划: ${event.plan}`);
                     break;
 
                 case "model_raw":

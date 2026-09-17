@@ -22,13 +22,73 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * 从可能包含多个 JSON 对象或杂项文本的字符串中提取第一个完整的 JSON 对象。
+ *
+ * 使用大括号匹配算法，同时正确处理：
+ * - 字符串内的转义字符（如 \" 和 \\）
+ * - 字符串内的嵌套大括号
+ *
+ * 返回第一个完整 JSON 对象的字符串，提取失败时返回 null。
+ */
+function extractFirstJsonObject(text: string): string | null {
+    const start = text.indexOf("{");
+    if (start === -1) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (ch === "\\" && inString) {
+            escaped = true;
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = !inString;
+            continue;
+        }
+
+        if (inString) continue;
+
+        if (ch === "{") depth++;
+        else if (ch === "}") {
+            depth--;
+            if (depth === 0) {
+                return text.slice(start, i + 1);
+            }
+        }
+    }
+
+    return null;
+}
+
 export function parseAgentResponse(raw: string): AgentResponse {
     let parsed: unknown;
 
     try {
         parsed = JSON.parse(raw);
     } catch {
-        throw new Error("Agent response is not valid JSON.");
+        // JSON.parse 失败 — 可能是 LLM 返回了多个 JSON 对象或在 JSON 外包含了其他文本。
+        // 尝试提取第一个完整的 JSON 对象作为降级处理。
+        const extracted = extractFirstJsonObject(raw);
+        if (extracted) {
+            try {
+                parsed = JSON.parse(extracted);
+            } catch {
+                throw new Error("Agent response is not valid JSON.");
+            }
+        } else {
+            throw new Error("Agent response is not valid JSON.");
+        }
     }
 
     if (!isPlainObject(parsed)) {

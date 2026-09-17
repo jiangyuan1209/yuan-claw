@@ -113,10 +113,15 @@ export async function runLocalAgentLoop(
         input: userInput,
     });
 
-    // Load and match skills based on user input
+    // Load skills and use LLM planning to select relevant ones
     const skillsRuntime = new SkillsRuntime();
     await skillsRuntime.reload();
-    const skillsPrompt = skillsRuntime.buildPromptForInput(userInput);
+    const skillsPrompt = await skillsRuntime.planAndBuildPrompt(
+        userInput,
+        Array.from(tools.values()),
+        modelClient,
+        eventBus,
+    );
 
     const historyMessages = previousMessages.filter(
         (message) => message.role !== "system",

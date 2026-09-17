@@ -5,3 +5,4 @@ export * from "./discover.js";
 export * from "./registry.js";
 export * from "./match.js";
 export * from "./prompt.js";
+export * from "./planner.js";
