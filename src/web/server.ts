@@ -12,6 +12,7 @@ import { createWebEventBusBroadcast } from "../events/web-event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
 import { runDirectLLM } from "../agent/run-direct-llm.js";
 import { createModelClient } from "../model/client.js";
+import { extractImageText } from "../agent/extract-image-text.js";
 import { STTService } from "../lib/stt.js";
 import { AudioSTTBridge } from "./audio-stt-bridge.js";
 import { ensureUserConfigInitialized } from "../config/init-user-config.js";
@@ -69,6 +70,17 @@ async function main() {
             audioBridge = new AudioSTTBridge(new STTService({ config }));
         }
         return audioBridge;
+    };
+
+    // 视觉模型客户端：用于图片 OCR 文字识别。
+    // 延迟初始化，与 audioBridge 同理。
+    let visionClient: ModelClient | null = null;
+    const getVisionClient = (): ModelClient => {
+        if (!visionClient) {
+            const visionModel = config.VISION_MODEL ?? config.MODEL_NAME ?? "qwen-vl-plus";
+            visionClient = createModelClient({ model: visionModel, config });
+        }
+        return visionClient;
     };
 
     // In-memory session storage for web
@@ -252,6 +264,30 @@ async function main() {
                     );
                 }
             });
+    });
+
+    // REST API: OCR — 使用视觉模型从图片中提取文字
+    app.post("/api/ocr", async (req, res) => {
+        const { images } = req.body as { images: string[] };
+
+        if (!images || !Array.isArray(images) || images.length === 0) {
+            res.status(400).json({ error: "Missing 'images' array" });
+            return;
+        }
+
+        try {
+            const client = getVisionClient();
+            const text = await extractImageText({
+                modelClient: client,
+                imageBase64: images,
+            });
+            res.json({ text });
+        } catch (err) {
+            console.error("[web] OCR error:", err);
+            res.status(500).json({
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
     });
 
     // Serve static files (built React app)

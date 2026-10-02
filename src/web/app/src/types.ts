@@ -51,6 +51,18 @@ export type AgentEvent =
 /** 聊天模式：agent（工具调用循环）或 direct（直连大模型，流式输出） */
 export type ChatMode = "agent" | "direct";
 
+/** 图片附件，用于 OCR 识别场景 */
+export type ImageAttachment = {
+    /** 唯一标识，用于 React key */
+    id: string;
+    /** Data URL（base64），用于预览显示 */
+    dataUrl: string;
+    /** 纯 base64 字符串（不含 data: 前缀），用于 OCR 上传 */
+    base64: string;
+    /** 原始文件名 */
+    name?: string;
+};
+
 /** Debug 模式下展示的单步模型原始输出 */
 export type DebugEvent = {
     step: number;
@@ -67,6 +79,10 @@ export type ChatMessage = {
     role: "user" | "assistant";
     content: string;
     timestamp: number;
+    /** OCR 识别出的附件文字（仅用户消息） */
+    attachmentText?: string;
+    /** 图片预览 Data URL 列表（仅用户消息） */
+    imagePreviews?: string[];
     /** Agent 模式下的工具调用事件列表，用于渲染工具状态标签 */
     toolEvents?: ToolEvent[];
     /** Debug 模式下展示的步骤原始输出列表 */

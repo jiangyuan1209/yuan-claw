@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import type { ChatMessage } from "../../memory/types.js";
 import type { AppConfig } from "../../config/load-config.js";
 
@@ -86,10 +87,19 @@ export function createOpenAICompatibleClient(
 
             const response = await client.chat.completions.create({
                 model,
-                messages: messages.map((message) => ({
-                    role: message.role === "tool" ? "user" : message.role,
-                    content: message.content,
-                })),
+                messages: messages.map((message) => {
+                    const apiRole = message.role === "tool" ? "user" as const : message.role;
+                    if (Array.isArray(message.content)) {
+                        return {
+                            role: apiRole,
+                            content: message.content as ChatCompletionContentPart[],
+                        };
+                    }
+                    return {
+                        role: apiRole,
+                        content: message.content,
+                    };
+                }) as unknown as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
                 temperature: 0,
             });
 
@@ -111,10 +121,19 @@ export function createOpenAICompatibleClient(
         ): AsyncIterable<string> {
             const stream = await client.chat.completions.create({
                 model,
-                messages: messages.map((message) => ({
-                    role: message.role === "tool" ? "user" : message.role,
-                    content: message.content,
-                })),
+                messages: messages.map((message) => {
+                    const apiRole = message.role === "tool" ? "user" as const : message.role;
+                    if (Array.isArray(message.content)) {
+                        return {
+                            role: apiRole,
+                            content: message.content as ChatCompletionContentPart[],
+                        };
+                    }
+                    return {
+                        role: apiRole,
+                        content: message.content,
+                    };
+                }) as unknown as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
                 temperature: 0,
                 stream: true,
             });

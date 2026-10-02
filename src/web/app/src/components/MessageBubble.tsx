@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
-import { Tag, Tooltip, Typography, Avatar, Collapse } from "antd";
-import { CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, CodeOutlined } from "@ant-design/icons";
+import { Tag, Tooltip, Typography, Avatar, Collapse, Image } from "antd";
+import { CheckCircleOutlined, LoadingOutlined, CloseCircleOutlined, CodeOutlined, PaperClipOutlined } from "@ant-design/icons";
 import { Bubble } from "@ant-design/x";
 import type { ChatMessage, DebugEvent, ToolEvent } from "../types";
 
@@ -175,6 +175,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             {message.toolEvents && message.toolEvents.length > 0 && (
                 <ToolEventsBar events={message.toolEvents} />
             )}
+            {/* 图片预览（仅用户消息） */}
+            {isUser && message.imagePreviews && message.imagePreviews.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                    <Image.PreviewGroup>
+                        {message.imagePreviews.map((url, i) => (
+                            <Image
+                                key={i}
+                                src={url}
+                                width={80}
+                                height={80}
+                                style={{ objectFit: "cover", borderRadius: 6 }}
+                            />
+                        ))}
+                    </Image.PreviewGroup>
+                </div>
+            )}
             <Typography>
                 {message.content ? (
                     <Text style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
@@ -185,7 +201,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     display: "inline-block",
                                     width: 2,
                                     height: "1em",
-                                    background: "#1677ff",
+                                    background: isUser ? "#fff" : "#1677ff",
                                     marginLeft: 2,
                                     verticalAlign: "text-bottom",
                                     animation: "cursor-blink 1s step-end infinite",
@@ -199,6 +215,45 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     </Text>
                 ) : null}
             </Typography>
+            {/* 附件文字（仅用户消息） */}
+            {isUser && message.attachmentText && (
+                <div
+                    style={{
+                        marginTop: 8,
+                        padding: 8,
+                        background: isUser ? "rgba(255,255,255,0.15)" : "#f6f8fa",
+                        borderRadius: 6,
+                        borderLeft: `3px solid ${isUser ? "rgba(255,255,255,0.4)" : "#d9d9d9"}`,
+                    }}
+                >
+                    <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+                        <PaperClipOutlined style={{ marginRight: 4, fontSize: 12 }} />
+                        <Text
+                            style={{
+                                fontSize: 12,
+                                color: isUser ? "rgba(255,255,255,0.75)" : "#8c8c8c",
+                            }}
+                        >
+                            附件识别文字
+                        </Text>
+                    </div>
+                    <pre
+                        style={{
+                            margin: 0,
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                            color: isUser ? "rgba(255,255,255,0.9)" : "#595959",
+                            fontFamily: "inherit",
+                            maxHeight: 200,
+                            overflowY: "auto",
+                        }}
+                    >
+                        {message.attachmentText}
+                    </pre>
+                </div>
+            )}
         </div>
     );
 

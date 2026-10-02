@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { message as antdMessage } from "antd";
-import type { AgentEvent, ChatMessage, ChatMode, DebugEvent, ToolEvent } from "../types";
+import type { AgentEvent, ChatMessage, ChatMode, DebugEvent, ImageAttachment, ToolEvent } from "../types";
 import { useWebSocket } from "./useWebSocket";
 
 /**
@@ -232,37 +232,73 @@ export function useChat() {
     /**
      * 发送用户消息。
      *
-     * 通信流程：
-     *   1. 将用户消息添加到消息列表（前端立即显示）
-     *   2. 通过 HTTP POST /api/chat 发送到后端，请求体携带 message、sessionId 和 mode
-     *   3. 后端收到后立即返回 { sessionId }，然后在异步启动 Agent 循环
-     *   4. Agent 循环运行过程中产生的事件通过 WebSocket 推送回来，由 handleEvent 处理
-     *
-     * 注意：消息通过 REST 发送，事件通过 WebSocket 接收，两者是分离的。
+     * 如果有图片附件，先调用 /api/ocr 进行文字识别，
+     * 再将识别结果作为附件文字追加到用户文字后面，一起发送到 /api/chat。
      */
     const sendMessage = useCallback(
-        (content: string) => {
+        async (content: string, images?: ImageAttachment[]) => {
             if (!content.trim() || isProcessing) return;
 
-            // 先在 UI 上显示用户消息
+            let attachmentText = "";
+            let imagePreviews: string[] | undefined;
+
+            // 如果有图片，先进行 OCR 识别
+            if (images && images.length > 0) {
+                setIsProcessing(true);
+                imagePreviews = images.map((img) => img.dataUrl);
+
+                try {
+                    const ocrRes = await fetch("/api/ocr", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            images: images.map((img) => img.base64),
+                        }),
+                    });
+
+                    if (!ocrRes.ok) {
+                        const err = await ocrRes.json().catch(() => ({ error: "OCR 请求失败" }));
+                        throw new Error(err.error || "OCR 请求失败");
+                    }
+
+                    const { text } = (await ocrRes.json()) as { text: string };
+                    if (text && text.trim()) {
+                        attachmentText = text.trim();
+                    } else {
+                        antdMessage.warning("图片未识别到文字");
+                    }
+                } catch (err) {
+                    antdMessage.error(`图片识别失败: ${err instanceof Error ? err.message : "未知错误"}`);
+                    setIsProcessing(false);
+                    return;
+                }
+            }
+
+            // 组合用户文字 + OCR 附件文字
+            let fullMessage = content.trim();
+            if (attachmentText) {
+                fullMessage += `\n\n---\n[附件: ${images!.length} 张图片的识别文字]\n\n${attachmentText}`;
+            }
+
+            // 先在 UI 上显示用户消息（展示原始文字 + 附件信息）
             const userMsg: ChatMessage = {
                 id: `user-${Date.now()}`,
                 role: "user",
                 content: content.trim(),
                 timestamp: Date.now(),
+                attachmentText: attachmentText || undefined,
+                imagePreviews,
             };
             setMessages((prev) => [...prev, userMsg]);
 
-            // 通过 REST POST 发送到后端。
-            // 服务端收到后立即响应（不等待 Agent 循环完成），
-            // Agent 循环在后台异步运行，事件通过 WebSocket 推送。
+            // 通过 REST POST 发送到后端
             fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    message: content.trim(),
-                    sessionId: sessionIdRef.current, // 关联 WebSocket 会话
-                    mode: modeRef.current,            // "agent" 或 "direct"
+                    message: fullMessage,
+                    sessionId: sessionIdRef.current,
+                    mode: modeRef.current,
                 }),
             }).catch((err) => {
                 antdMessage.error(`发送失败: ${err.message}`);

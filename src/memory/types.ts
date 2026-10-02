@@ -1,4 +1,13 @@
 /**
+ * 多模态消息内容的一部分。
+ * 当 ChatMessage.content 为数组时，每个元素是一个 ChatMessageContentPart，
+ * 支持文本和图片混合发送给视觉模型（如 OCR 场景）。
+ */
+export type ChatMessageContentPart =
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string } };
+
+/**
  * 后端对话记忆的消息类型（供 LLM 使用的标准格式）。
  *
  * 注意：这与前端的 ChatMessage（src/web/app/src/types.ts）不同。
@@ -13,7 +22,7 @@
  */
 export type ChatMessage = {
     role: "system" | "user" | "assistant" | "tool";
-    content: string;
+    content: string | ChatMessageContentPart[];
 };
 
 /**
