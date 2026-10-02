@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
     OPENAI_BASE_URL: "",
     OPENAI_MODEL: "",
     BAIDU_API_KEY: "",
+    STT_MODEL: "fun-asr-realtime",
 };
 
 export async function ensureUserConfigInitialized(): Promise<{

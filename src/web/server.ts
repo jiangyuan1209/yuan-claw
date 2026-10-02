@@ -12,6 +12,8 @@ import { createWebEventBusBroadcast } from "../events/web-event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
 import { runDirectLLM } from "../agent/run-direct-llm.js";
 import { createModelClient } from "../model/client.js";
+import { STTService } from "../lib/stt.js";
+import { AudioSTTBridge } from "./audio-stt-bridge.js";
 import { ensureUserConfigInitialized } from "../config/init-user-config.js";
 import { loadAppConfig } from "../config/load-config.js";
 import { resolveWorkspaceRoot } from "../security/path-guards.js";
@@ -57,6 +59,18 @@ async function main() {
     const modelClient = createModelClient({ config });
     const sessionStore = new SessionStore();
 
+    // 语音识别桥接器：将浏览器麦克风采集的音频转发到 DashScope 实时 ASR。
+    // 延迟初始化——STTService 在缺少 MODEL_API_KEY 时会抛错，若在启动时构造
+    // 会导致未配置密钥的用户整个 Web 服务无法启动。仅在首次用到语音时才创建，
+    // 出错信息回传给前端而不影响文字对话功能。
+    let audioBridge: AudioSTTBridge | null = null;
+    const getAudioBridge = (): AudioSTTBridge => {
+        if (!audioBridge) {
+            audioBridge = new AudioSTTBridge(new STTService({ config }));
+        }
+        return audioBridge;
+    };
+
     // In-memory session storage for web
     const sessions = new Map<string, ChatSession>();
 
@@ -67,12 +81,34 @@ async function main() {
     const server = app.listen(process.env.PORT ?? DEFAULT_PORT, () => {
         const port = (server.address() as import("net").AddressInfo).port;
         console.log(`Yuan Claw Web server running at http://localhost:${port}`);
-        console.log(`WebSocket endpoint: ws://localhost:${port}/ws`);
+        console.log(`Chat WebSocket:  ws://localhost:${port}/ws`);
+        console.log(`Audio WebSocket: ws://localhost:${port}/ws/audio`);
     });
 
-    const wss = new WebSocketServer({ server, path: "/ws" });
+    // 使用 noServer 模式，手动按路径把 HTTP upgrade 请求分发到对应的 WSS：
+    //   /ws       → 聊天事件
+    //   /ws/audio → 语音识别（浏览器麦克风）
+    // 若两个 WSS 都直接挂在同一 HTTP server 上，第一个会对不匹配的路径执行
+    // abortHandshake(400) 并销毁 socket，导致第二个无法处理该连接。
+    const chatWss = new WebSocketServer({ noServer: true });
+    const audioWss = new WebSocketServer({ noServer: true });
 
-    wss.on("connection", (ws) => {
+    server.on("upgrade", (request, socket, head) => {
+        const pathname = new URL(request.url ?? "/", `http://${request.headers.host}`).pathname;
+
+        if (pathname === "/ws/audio") {
+            audioWss.handleUpgrade(request, socket, head, (ws) => {
+                audioWss.emit("connection", ws, request);
+            });
+        } else if (pathname === "/ws") {
+            chatWss.handleUpgrade(request, socket, head, (ws) => {
+                chatWss.emit("connection", ws, request);
+            });
+        }
+        // 其他路径：不处理，交给 Vite HMR 等其他处理器
+    });
+
+    chatWss.on("connection", (ws) => {
         const sessionId = crypto.randomUUID();
         const session: ChatSession = {
             id: sessionId,
@@ -102,6 +138,59 @@ async function main() {
 
         ws.on("error", (err) => {
             console.error(`WebSocket error (${sessionId}):`, err.message);
+        });
+    });
+
+    // ── 语音识别 WebSocket（/ws/audio）────────────────────────────
+    audioWss.on("connection", (ws) => {
+        const audioSessionId = crypto.randomUUID();
+        console.log(`[audio] WebSocket connected: ${audioSessionId}`);
+
+        ws.on("message", async (data, isBinary) => {
+            // 二进制帧：浏览器麦克风采集的 PCM 音频块，直接转发给 STT
+            if (isBinary) {
+                audioBridge?.sendChunk(audioSessionId, data as Buffer);
+                return;
+            }
+
+            let msg: Record<string, unknown>;
+            try {
+                msg = JSON.parse(data.toString());
+            } catch {
+                return;
+            }
+
+            switch (msg.type) {
+                case "start": {
+                    // 首次启动语音时才创建 STT 服务，缺少密钥等错误回传前端而非中断连接
+                    try {
+                        getAudioBridge().startSession(audioSessionId, ws);
+                    } catch (err) {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(
+                                JSON.stringify({
+                                    type: "error",
+                                    error: err instanceof Error ? err.message : String(err),
+                                }),
+                            );
+                        }
+                    }
+                    break;
+                }
+
+                case "stop":
+                    await audioBridge?.endSession(audioSessionId);
+                    break;
+            }
+        });
+
+        ws.on("close", () => {
+            console.log(`[audio] WebSocket disconnected: ${audioSessionId}`);
+            audioBridge?.removeSession(audioSessionId);
+        });
+
+        ws.on("error", (err) => {
+            console.error(`[audio] WebSocket error (${audioSessionId}):`, err.message);
         });
     });
 

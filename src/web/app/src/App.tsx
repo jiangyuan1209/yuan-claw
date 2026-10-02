@@ -1,6 +1,5 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect } from "react";
 import { Layout, Button, Space, Badge, Typography, Tooltip, Switch } from "antd";
-import { Sender } from "@ant-design/x";
 import {
     DeleteOutlined,
     WifiOutlined,
@@ -12,6 +11,7 @@ import {
 } from "@ant-design/icons";
 import { useChat } from "./hooks/useChat";
 import { MessageBubble } from "./components/MessageBubble";
+import { InputPanel } from "./components/InputPanel";
 import type { ChatMessage } from "./types";
 
 const { Header, Content } = Layout;
@@ -50,14 +50,6 @@ const App: React.FC = () => {
     } = useChat();
 
     const scrollRef = useAutoScroll([messages, currentAssistantMsg]);
-    const [inputValue, setInputValue] = useState("");
-
-    const handleSend = () => {
-        if (inputValue.trim()) {
-            sendMessage(inputValue);
-            setInputValue("");
-        }
-    };
 
     const allItems: ChatMessage[] = [
         ...messages,
@@ -191,28 +183,16 @@ const App: React.FC = () => {
                     )}
                 </div>
 
-                <div
-                    style={{
-                        padding: "12px 24px",
-                        background: "#fff",
-                        borderTop: "1px solid #f0f0f0",
-                    }}
-                >
-                    <Sender
-                        value={inputValue}
-                        onChange={setInputValue}
-                        onSubmit={handleSend}
-                        placeholder={
-                            mode === "direct"
-                                ? "直连模式 — 输入问题，流式回答... (Enter 发送)"
-                                : "输入你的问题... (Enter 发送, Shift+Enter 换行)"
-                        }
-                        loading={isProcessing}
-                        disabled={!connected}
-                        submitType="enter"
-                        autoSize={{ minRows: 1, maxRows: 6 }}
-                    />
-                </div>
+                <InputPanel
+                    onSend={sendMessage}
+                    isProcessing={isProcessing}
+                    connected={connected}
+                    placeholder={
+                        mode === "direct"
+                            ? "直连模式 — 输入问题，流式回答... (Enter 发送)"
+                            : "输入你的问题... (Enter 发送, Shift+Enter 换行)"
+                    }
+                />
             </Content>
         </Layout>
     );

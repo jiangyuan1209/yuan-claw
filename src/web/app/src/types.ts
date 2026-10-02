@@ -81,3 +81,16 @@ export type ToolEvent = {
     result?: unknown;
     error?: string;
 };
+
+/**
+ * 语音识别（/ws/audio WebSocket）的服务端事件类型。
+ *   - ready：STT 会话就绪，浏览器可开始推送 PCM 音频块
+ *   - partial：实时中间识别结果
+ *   - final：本次录音的最终识别结果
+ *   - error：识别出错
+ */
+export type AudioSTTEvent =
+    | { type: "ready" }
+    | { type: "partial"; text: string }
+    | { type: "final"; text: string }
+    | { type: "error"; error: string };

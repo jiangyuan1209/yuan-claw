@@ -9,6 +9,9 @@ const userSettingsSchema = z.object({
 
     BAIDU_API_KEY: z.string().optional(),
     BAIDU_API_URL: z.string().optional(),
+
+    /** 语音识别（STT）使用的 DashScope 实时 ASR 模型名，缺省为 fun-asr-realtime */
+    STT_MODEL: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof userSettingsSchema>;
