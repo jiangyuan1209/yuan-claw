@@ -1,5 +1,6 @@
 import type { ChatMessage } from "../memory/types.js";
 import type { EventBus } from "../events/event-bus.js";
+import { compressHistoryIfNeeded } from "./compress-history.js";
 
 /**
  * Model client interface for direct LLM mode.
@@ -57,26 +58,30 @@ export async function runDirectLLM(
         (msg) => msg.role !== "system",
     );
 
+    // 如果历史对话超过 100,000 字符，调用 LLM 进行压缩
+    const compressedHistory = await compressHistoryIfNeeded(
+        historyMessages,
+        modelClient,
+    );
+
     /**
-     * 直连模式的消息构建：[...历史对话, 本次用户输入]
+     * 直连模式的消息构建：[...压缩后的历史对话, 本次用户输入]
      *
      * 与 Agent 模式的区别：
      *   - 没有 system prompt（不注入工具列表和技能描述）
      *   - 没有多步骤记忆（单次 LLM 调用，不存在步骤间的上下文累积）
-     *   - 仅有对话记忆：通过 historyMessages 携带之前轮次的问答历史
+     *   - 仅有对话记忆：通过 compressedHistory 携带之前轮次的问答历史
      *
      * 流式输出完成后，assistant 回复会被追加到 messages 数组并持久化，
-     * 供下一轮对话作为 historyMessages 使用。
+     * 供下一轮对话作为 previousMessages 使用。
      *
-     * ===== 轮次大小限制 =====
+     * ===== 对话记忆压缩 =====
      *
-     * 多步骤上限：无（直连模式只有单次 LLM 调用，不存在步骤循环）。
-     * 对话记忆上限：⚠️ 当前无限制！previousMessages 的全部历史都会注入 messages，
-     *   然后整体发给 LLM。长时间对话可能导致超出 LLM 上下文窗口。
-     *   与 Agent 模式相同，trimMessages 仅在持久化到磁盘时使用，未在发给 LLM 前调用。
+     * 当历史对话超过 100,000 字符时，会通过 compressHistoryIfNeeded 调用 LLM
+     * 将较早的消息压缩为结构化摘要，保留最近 6 条消息原文。
      */
     const messages: ChatMessage[] = [
-        ...historyMessages,
+        ...compressedHistory,
         { role: "user", content: userInput },
     ];
 

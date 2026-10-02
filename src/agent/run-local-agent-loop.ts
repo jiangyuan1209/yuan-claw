@@ -5,6 +5,7 @@ import { buildSystemPrompt } from "./build-system-prompt.js";
 import { parseAgentResponse } from "./parse-agent-response.js";
 import type { ApprovalDecision } from "./read-approval.js";
 import { SkillsRuntime } from "../skills/runtime.js";
+import { compressHistoryIfNeeded } from "./compress-history.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -127,11 +128,17 @@ export async function runLocalAgentLoop(
         (message) => message.role !== "system",
     );
 
+    // 如果历史对话超过 100,000 字符，调用 LLM 进行压缩
+    const compressedHistory = await compressHistoryIfNeeded(
+        historyMessages,
+        modelClient,
+    );
+
     /**
      * ===== 多步骤记忆（Agent 模式特有） =====
      *
      * messages 数组是整个 Agent 循环的"记忆核心"。
-     * 初始内容：[system prompt, ...历史对话, 本次用户输入]
+     * 初始内容：[system prompt, ...压缩后的历史对话, 本次用户输入]
      *
      * 在后续的 for 循环中，每一步都会往这个数组追加新消息：
      *   - LLM 的原始输出（assistant）
@@ -143,20 +150,18 @@ export async function runLocalAgentLoop(
      * 因此它"记得"之前每一步做了什么、工具返回了什么、用户说了什么。
      * 这就是 Agent 单次多步骤任务的记忆机制。
      *
-     * ===== 轮次大小限制 =====
+     * ===== 对话记忆压缩 =====
      *
-     * 多步骤上限：由 maxSteps 控制（见参数注释），超出后循环终止。
-     * 对话记忆上限：⚠️ 当前无限制！previousMessages 的全部历史都会注入 messages，
-     *   然后整体发给 LLM。长时间对话可能导致超出 LLM 上下文窗口。
-     *   trimMessages / prepareMessagesForModel 函数已实现截断逻辑，
-     *   但仅在 SessionStore.save() 持久化到磁盘时使用，未在发给 LLM 前调用。
+     * 当历史对话超过 100,000 字符时，会通过 compressHistoryIfNeeded 调用 LLM
+     * 将较早的消息压缩为结构化摘要，保留最近 6 条消息原文。
+     * 这样既保证了 LLM 上下文窗口不溢出，又保留了重要的对话信息。
      */
     const messages: ChatMessage[] = [
         {
             role: "system",
             content: buildSystemPrompt(Array.from(tools.values()), skillsPrompt),
         },
-        ...historyMessages,
+        ...compressedHistory,
         {
             role: "user",
             content: userInput,

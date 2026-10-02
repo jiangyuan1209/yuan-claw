@@ -70,6 +70,31 @@ export function useChat() {
                 sessionIdRef.current = event.sessionId;
                 break;
 
+            // 会话从磁盘恢复：加载历史消息到前端
+            case "session_restored": {
+                const restoredId = event.sessionId;
+                fetch(`/api/session/${restoredId}`)
+                    .then((res) => (res.ok ? res.json() : null))
+                    .then((data) => {
+                        if (data && Array.isArray(data.messages) && data.messages.length > 0) {
+                            const restoredMessages: ChatMessage[] = data.messages.map(
+                                (m: { role: string; content: string }, i: number) => ({
+                                    id: `restored-${i}-${Date.now()}`,
+                                    role: m.role as "user" | "assistant",
+                                    content: typeof m.content === "string" ? m.content : "",
+                                    timestamp: Date.now() - (data.messages.length - i) * 1000,
+                                }),
+                            );
+                            setMessages(restoredMessages);
+                            antdMessage.success(`已恢复 ${restoredMessages.length} 条历史消息`);
+                        }
+                    })
+                    .catch((err) => {
+                        console.error("Failed to restore session:", err);
+                    });
+                break;
+            }
+
             // Agent 循环开始：标记正在处理，创建空的助手消息占位符，后续事件会逐步填充它
             case "run_start":
                 setIsProcessing(true);
@@ -223,7 +248,7 @@ export function useChat() {
         antdMessage.warning("连接已断开，正在重连...");
     }, []);
 
-    const { connected, sessionId, reconnect } = useWebSocket({
+    const { connected, sessionId, reconnect, clearSession } = useWebSocket({
         onEvent: handleEvent,
         onConnected: handleConnected,
         onDisconnected: handleDisconnected,
@@ -313,7 +338,57 @@ export function useChat() {
         setCurrentAssistantMsg(null);
         currentToolEvents.current.clear();
         currentDebugEvents.current = [];
-    }, []);
+        clearSession();
+    }, [clearSession]);
+
+    /** 切换到指定历史会话 */
+    const switchSession = useCallback(
+        async (targetSessionId: string) => {
+            try {
+                const res = await fetch(`/api/session/${targetSessionId}`);
+                if (!res.ok) {
+                    antdMessage.error("加载会话失败");
+                    return;
+                }
+                const data = (await res.json()) as {
+                    sessionId: string;
+                    messages: Array<{ role: string; content: string }>;
+                };
+
+                // 更新 localStorage 中的 sessionId，并重连 WebSocket
+                localStorage.setItem("yuan-claw-session-id", targetSessionId);
+                sessionIdRef.current = targetSessionId;
+
+                // 加载历史消息到 UI
+                const restoredMessages: ChatMessage[] = data.messages.map(
+                    (m, i) => ({
+                        id: `restored-${i}-${Date.now()}`,
+                        role: m.role as "user" | "assistant",
+                        content: typeof m.content === "string" ? m.content : "",
+                        timestamp: Date.now() - (data.messages.length - i) * 1000,
+                    }),
+                );
+                setMessages(restoredMessages);
+                setCurrentAssistantMsg(null);
+
+                // 重连 WebSocket 以关联到新的 session
+                reconnect();
+            } catch (err) {
+                antdMessage.error(`切换会话失败: ${err instanceof Error ? err.message : "未知错误"}`);
+            }
+        },
+        [reconnect],
+    );
+
+    /** 新建对话（清除当前会话，获取新 sessionId） */
+    const newSession = useCallback(() => {
+        setMessages([]);
+        setCurrentAssistantMsg(null);
+        currentToolEvents.current.clear();
+        currentDebugEvents.current = [];
+        clearSession();
+        reconnect();
+    }, [clearSession, reconnect]);
 
     return {
         messages,
@@ -328,6 +403,8 @@ export function useChat() {
         setDebug,
         sendMessage,
         clearMessages,
+        switchSession,
+        newSession,
         reconnect,
     };
 }

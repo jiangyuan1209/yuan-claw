@@ -120,30 +120,75 @@ async function main() {
         // 其他路径：不处理，交给 Vite HMR 等其他处理器
     });
 
-    chatWss.on("connection", (ws) => {
-        const sessionId = crypto.randomUUID();
+    chatWss.on("connection", (ws, request) => {
+        // 从 URL 查询参数中提取 sessionId，用于恢复之前的对话
+        const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
+        const requestedSessionId = url.searchParams.get("sessionId");
+
+        let sessionId: string;
+        let restoredMessages: ChatMessage[] = [];
+
+        if (requestedSessionId) {
+            sessionId = requestedSessionId;
+            // 尝试从内存中恢复
+            const existingSession = sessions.get(sessionId);
+            if (existingSession) {
+                restoredMessages = existingSession.messages;
+            }
+        } else {
+            sessionId = crypto.randomUUID();
+        }
+
         const session: ChatSession = {
             id: sessionId,
-            messages: [],
+            messages: restoredMessages,
             ws,
         };
         sessions.set(sessionId, session);
 
-        console.log(`WebSocket connected: ${sessionId}`);
+        console.log(`WebSocket connected: ${sessionId}${requestedSessionId ? " (restored)" : ""}`);
 
-        // Send session ID to client
+        // Send session ID to client, along with whether this is a restored session
         ws.send(
             JSON.stringify({
                 type: "session_init",
                 sessionId,
+                restored: restoredMessages.length > 0,
             }),
         );
 
+        // 如果是恢复的 session 且有磁盘记录，异步加载完整历史
+        if (requestedSessionId && restoredMessages.length === 0) {
+            sessionStore.load(sessionId).then((data) => {
+                if (data && data.messages.length > 0) {
+                    session.messages = data.messages;
+                    console.log(`[web] Session ${sessionId} restored from disk (${data.messages.length} messages)`);
+                    // 通知前端会话已恢复
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(
+                            JSON.stringify({
+                                type: "session_restored",
+                                sessionId,
+                                messageCount: data.messages.length,
+                            }),
+                        );
+                    }
+                }
+            }).catch((err) => {
+                console.error(`[web] Failed to restore session ${sessionId}:`, err);
+            });
+        }
+
         ws.on("close", () => {
             console.log(`WebSocket disconnected: ${sessionId}`);
-            // Clean up session on disconnect to prevent stale broadcasts
+            // 断开时持久化会话到磁盘，然后从内存中移除
             const existing = sessions.get(sessionId);
             if (existing && existing.ws === ws) {
+                if (existing.messages.length > 0) {
+                    sessionStore.save(sessionId, existing.messages).catch((err) => {
+                        console.error(`[web] Failed to persist session ${sessionId}:`, err);
+                    });
+                }
                 sessions.delete(sessionId);
             }
         });
@@ -247,7 +292,7 @@ async function main() {
         // Run loop asynchronously (response already sent)
         runningSessions.add(session.id);
         const handler = mode === "direct" ? runDirectLLMHandler : runAgentLoop;
-        handler(message, session, tools, modelClient)
+        handler(message, session, tools, modelClient, sessionStore)
             .finally(() => {
                 runningSessions.delete(session.id);
             })
@@ -290,6 +335,65 @@ async function main() {
         }
     });
 
+    // REST API: 获取会话历史（用于前端恢复对话）
+    app.get("/api/session/:id", async (req, res) => {
+        const { id } = req.params;
+
+        // 先从内存中查找
+        const memSession = sessions.get(id);
+        if (memSession && memSession.messages.length > 0) {
+            res.json({
+                sessionId: id,
+                messages: extractDisplayMessages(memSession.messages),
+            });
+            return;
+        }
+
+        // 从磁盘加载
+        try {
+            const data = await sessionStore.load(id);
+            if (data) {
+                res.json({
+                    sessionId: id,
+                    messages: extractDisplayMessages(data.messages),
+                    updatedAt: data.updatedAt,
+                });
+            } else {
+                res.status(404).json({ error: "Session not found" });
+            }
+        } catch (err) {
+            res.status(500).json({
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    });
+
+    // REST API: 列出所有已保存的会话（用于侧边栏）
+    app.get("/api/sessions", async (_req, res) => {
+        try {
+            const list = await sessionStore.listSessionsWithMeta();
+            res.json({ sessions: list });
+        } catch (err) {
+            res.status(500).json({
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    });
+
+    // REST API: 删除指定会话
+    app.delete("/api/session/:id", async (req, res) => {
+        const { id } = req.params;
+        try {
+            await sessionStore.delete(id);
+            sessions.delete(id);
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    });
+
     // Serve static files (built React app)
     const distPath = path.resolve(__dirname, "../../web-dist");
     if (fs.existsSync(distPath)) {
@@ -306,11 +410,82 @@ type ModelClient = {
     generateStream: (messages: ChatMessage[]) => AsyncIterable<string>;
 };
 
+/**
+ * 从原始对话历史中提取可供前端展示的消息。
+ *
+ * Agent 模式下 messages 数组包含大量中间步骤（工具调用 JSON、工具执行结果等），
+ * 前端只需要展示：用户的原始输入 + 助手的最终回复。
+ *
+ * 过滤规则：
+ *   - assistant 消息：如果是 JSON 且 type="final"，提取 message 字段；
+ *     如果是 tool_call 或 ask_confirmation，跳过
+ *   - user 消息：如果是工具执行结果（JSON 含 _meta 或 tool_result 特征），跳过；
+ *     否则保留为用户原始输入
+ */
+function extractDisplayMessages(messages: ChatMessage[]): Array<{ role: "user" | "assistant"; content: string }> {
+    const result: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+    for (const msg of messages) {
+        const content = typeof msg.content === "string" ? msg.content : "";
+        if (!content) continue;
+
+        if (msg.role === "assistant") {
+            // 尝试解析为 Agent 协议 JSON
+            const trimmed = content.trim();
+            if (trimmed.startsWith("{")) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    if (parsed.type === "final" && typeof parsed.message === "string") {
+                        result.push({ role: "assistant", content: parsed.message });
+                        continue;
+                    }
+                    // tool_call / ask_confirmation → 跳过
+                    if (parsed.type === "tool_call" || parsed.type === "ask_confirmation") {
+                        continue;
+                    }
+                } catch {
+                    // 不是合法 JSON，当作普通文本
+                }
+            }
+            result.push({ role: "assistant", content });
+        } else if (msg.role === "user") {
+            const trimmed = content.trim();
+
+            // 过滤工具执行结果（JSON 格式）
+            if (trimmed.startsWith("{")) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    if (parsed._meta || parsed.tool_result !== undefined) {
+                        continue;
+                    }
+                } catch {
+                    // 不是合法 JSON，继续后续检查
+                }
+            }
+
+            // 过滤工具执行结果（纯文本格式：Tool "xxx" completed/failed）
+            if (/^Tool ".+?" (completed successfully|failed)\./.test(trimmed)) {
+                continue;
+            }
+
+            // 过滤压缩摘要
+            if (trimmed.startsWith("[以下是之前对话的压缩摘要")) {
+                continue;
+            }
+
+            result.push({ role: "user", content });
+        }
+    }
+
+    return result;
+}
+
 async function runAgentLoop(
     userInput: string,
     session: ChatSession,
     tools: Map<string, import("../tools/types.js").Tool>,
     modelClient: ModelClient,
+    sessionStore: SessionStore,
 ) {
     const eventBus = createWebEventBusBroadcast(
         new Set(session.ws ? [session.ws] : []),
@@ -332,14 +507,16 @@ async function runAgentLoop(
             modelClient,
             tools,
             eventBus,
-            // Agent 多步骤上限：硬编码 30 步（Web 端不支持 --max-steps 参数）。
-            // 仅限制单次任务内的步骤数，不影响跨轮次的对话记忆。
             maxSteps: 30,
             previousMessages: session.messages,
             approvalMode: "always-allow",
             requestApproval: undefined,
             onMessagesUpdated: async (messages: ChatMessage[]) => {
                 session.messages = messages;
+                // 异步持久化到磁盘，不阻塞 Agent 循环
+                sessionStore.save(session.id, messages).catch((err) => {
+                    console.error(`[web] Failed to persist session ${session.id}:`, err);
+                });
             },
         });
 
@@ -354,6 +531,7 @@ async function runDirectLLMHandler(
     session: ChatSession,
     _tools: Map<string, import("../tools/types.js").Tool>,
     modelClient: ModelClient,
+    sessionStore: SessionStore,
 ) {
     const eventBus = createWebEventBusBroadcast(
         new Set(session.ws ? [session.ws] : []),
@@ -377,6 +555,9 @@ async function runDirectLLMHandler(
             previousMessages: session.messages,
             onMessagesUpdated: async (messages: ChatMessage[]) => {
                 session.messages = messages;
+                sessionStore.save(session.id, messages).catch((err) => {
+                    console.error(`[web:direct] Failed to persist session ${session.id}:`, err);
+                });
             },
         });
 

@@ -11,11 +11,19 @@ import type { AgentEvent } from "../types";
  *     将 model_raw、tool_start、tool_end、assistant、streaming_token 等事件
  *     以 JSON 格式逐条推送给前端。
  *
+ * 会话持久化：
+ *   - sessionId 保存在 localStorage 中，页面刷新后自动恢复之前的对话
+ *   - WebSocket 连接时通过 URL 查询参数 ?sessionId=xxx 告知后端恢复哪个会话
+ *   - 后端收到后从磁盘加载历史消息，并通过 session_restored 事件通知前端
+ *
  * 本 Hook 职责：
  *   1. 建立并维护 WebSocket 长连接（自动重连）
  *   2. 接收服务端推送的 AgentEvent，回调给 onEvent 处理
  *   3. 连接建立后从 session_init 事件中提取 sessionId，用于后续 REST 请求关联会话
+ *   4. 将 sessionId 持久化到 localStorage，刷新页面后可恢复会话
  */
+
+const SESSION_STORAGE_KEY = "yuan-claw-session-id";
 
 type UseWebSocketOptions = {
     /** 收到服务端事件时的回调，由 useChat 注入处理逻辑 */
@@ -38,14 +46,19 @@ export function useWebSocket(options: UseWebSocketOptions) {
         // 关闭已有连接，防止重复连接
         const existing = wsRef.current;
         if (existing) {
-            existing.onclose = null; // 置空 onclose 避免触发重连循环
+            existing.onclose = null;
             existing.close();
             wsRef.current = null;
         }
 
+        // 从 localStorage 读取上次的 sessionId，用于恢复对话
+        const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+
         // 根据当前页面协议自动选择 ws:// 或 wss://
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        const wsUrl = storedSessionId
+            ? `${protocol}//${window.location.host}/ws?sessionId=${encodeURIComponent(storedSessionId)}`
+            : `${protocol}//${window.location.host}/ws`;
 
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
@@ -79,6 +92,8 @@ export function useWebSocket(options: UseWebSocketOptions) {
                 // session_init 是连接后服务端推送的第一条事件，提取 sessionId 保存
                 if (data.type === "session_init" && data.sessionId) {
                     setSessionId(data.sessionId);
+                    // 持久化 sessionId 到 localStorage
+                    localStorage.setItem(SESSION_STORAGE_KEY, data.sessionId);
                 }
                 onEvent(data as AgentEvent);
             } catch {
@@ -105,5 +120,10 @@ export function useWebSocket(options: UseWebSocketOptions) {
         }
     }, []);
 
-    return { connected, sessionId, send, reconnect: connect };
+    /** 清除持久化的 sessionId（用于"新建对话"场景） */
+    const clearSession = useCallback(() => {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+    }, []);
+
+    return { connected, sessionId, send, reconnect: connect, clearSession };
 }

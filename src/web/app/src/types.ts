@@ -10,7 +10,9 @@
  */
 export type AgentEvent =
     /** WebSocket 连接建立时，服务端推送的第一条事件，携带分配给本次连接的 sessionId */
-    | { type: "session_init"; sessionId: string }
+    | { type: "session_init"; sessionId: string; restored?: boolean }
+    /** 会话从磁盘恢复后推送，前端据此加载历史消息 */
+    | { type: "session_restored"; sessionId: string; messageCount: number }
     /** Agent 循环开始处理用户输入时触发，input 为用户发送的原始消息 */
     | { type: "run_start"; input: string }
     /**

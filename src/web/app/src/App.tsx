@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { Layout, Button, Space, Badge, Typography, Tooltip, Switch } from "antd";
 import {
     DeleteOutlined,
@@ -8,10 +8,13 @@ import {
     RobotOutlined,
     MessageOutlined,
     BugOutlined,
+    MenuFoldOutlined,
+    MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import { useChat } from "./hooks/useChat";
 import { MessageBubble } from "./components/MessageBubble";
 import { InputPanel } from "./components/InputPanel";
+import { SessionSidebar } from "./components/SessionSidebar";
 import type { ChatMessage } from "./types";
 
 const { Header, Content } = Layout;
@@ -40,16 +43,20 @@ const App: React.FC = () => {
         isStreaming,
         currentAssistantMsg,
         connected,
+        sessionId,
         mode,
         setMode,
         debug,
         setDebug,
         sendMessage,
         clearMessages,
+        switchSession,
+        newSession,
         reconnect,
     } = useChat();
 
     const scrollRef = useAutoScroll([messages, currentAssistantMsg]);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     const allItems: ChatMessage[] = [
         ...messages,
@@ -57,143 +64,160 @@ const App: React.FC = () => {
     ];
 
     return (
-        <Layout style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-            <Header
-                style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    background: "#fff",
-                    borderBottom: "1px solid #f0f0f0",
-                    padding: "0 24px",
-                    height: 56,
-                }}
-            >
-                <Space>
-                    <Title level={4} style={{ margin: 0 }}>
-                        🦞 Yuan Claw AI
-                    </Title>
-                </Space>
-                <Space>
-                    <Tooltip title={mode === "agent" ? "Agent 模式（工具调用）" : "直连模式（流式输出）"}>
-                        <Space size={4}>
-                            {mode === "agent" ? (
-                                <RobotOutlined style={{ color: "#1677ff", fontSize: 16 }} />
-                            ) : (
-                                <MessageOutlined style={{ color: "#ff7a45", fontSize: 16 }} />
-                            )}
-                            <Switch
-                                size="small"
-                                checked={mode === "direct"}
-                                onChange={(checked) => setMode(checked ? "direct" : "agent")}
-                                disabled={isProcessing}
-                            />
-                        </Space>
-                    </Tooltip>
-                    {mode === "agent" && (
-                        <Tooltip title={debug ? "Debug 模式已开启（显示中间步骤）" : "开启 Debug 模式"}>
-                            <Button
-                                size="small"
-                                type={debug ? "primary" : "default"}
-                                icon={<BugOutlined />}
-                                onClick={() => setDebug(!debug)}
-                                style={debug ? { background: "#faad14", borderColor: "#faad14" } : {}}
-                            >
-                                Debug
-                            </Button>
-                        </Tooltip>
-                    )}
-                    <Tooltip title={connected ? "已连接" : "未连接"}>
-                        <Badge dot={connected} color={connected ? "green" : "red"}>
-                            {connected ? (
-                                <WifiOutlined style={{ color: "#52c41a" }} />
-                            ) : (
-                                <DisconnectOutlined style={{ color: "#ff4d4f" }} />
-                            )}
-                        </Badge>
-                    </Tooltip>
-                    {!connected && (
-                        <Button size="small" icon={<ReloadOutlined />} onClick={reconnect}>
-                            重连
-                        </Button>
-                    )}
-                    <Button
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={clearMessages}
-                        disabled={messages.length === 0}
-                    >
-                        清空
-                    </Button>
-                </Space>
-            </Header>
+        <Layout style={{ height: "100vh", display: "flex", flexDirection: "row" }}>
+            {/* 历史对话侧边栏 */}
+            <SessionSidebar
+                activeSessionId={sessionId}
+                onSelectSession={switchSession}
+                onNewSession={newSession}
+                collapsed={sidebarCollapsed}
+            />
 
-            <Content
-                style={{
-                    flex: 1,
-                    overflow: "hidden",
-                    display: "flex",
-                    flexDirection: "column",
-                    background: "#f5f5f5",
-                }}
-            >
-                <div
-                    ref={scrollRef}
+            {/* 主内容区 */}
+            <Layout style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <Header
                     style={{
-                        flex: 1,
-                        overflowY: "auto",
-                        padding: "16px 24px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        background: "#fff",
+                        borderBottom: "1px solid #f0f0f0",
+                        padding: "0 24px",
+                        height: 56,
                     }}
                 >
-                    {allItems.length === 0 ? (
-                        <div
-                            style={{
-                                display: "flex",
-                                justifyContent: "center",
-                                alignItems: "center",
-                                height: "100%",
-                                color: "#999",
-                                fontSize: 16,
-                            }}
-                        >
-                            <Text type="secondary">
-                                开始对话吧，我会帮你完成任务 🚀
-                            </Text>
-                        </div>
-                    ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                            {allItems.map((msg) => (
-                                <MessageBubble
-                                    key={msg.id}
-                                    message={msg}
-                                    isTyping={
-                                        msg.id === currentAssistantMsg?.id &&
-                                        !msg.content &&
-                                        isProcessing
-                                    }
-                                    isStreaming={
-                                        msg.id === currentAssistantMsg?.id &&
-                                        isStreaming
-                                    }
-                                    debug={debug}
+                    <Space>
+                        <Button
+                            type="text"
+                            icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                            style={{ fontSize: 16 }}
+                        />
+                        <Title level={4} style={{ margin: 0 }}>
+                            🦞 Yuan Claw AI
+                        </Title>
+                    </Space>
+                    <Space>
+                        <Tooltip title={mode === "agent" ? "Agent 模式（工具调用）" : "直连模式（流式输出）"}>
+                            <Space size={4}>
+                                {mode === "agent" ? (
+                                    <RobotOutlined style={{ color: "#1677ff", fontSize: 16 }} />
+                                ) : (
+                                    <MessageOutlined style={{ color: "#ff7a45", fontSize: 16 }} />
+                                )}
+                                <Switch
+                                    size="small"
+                                    checked={mode === "direct"}
+                                    onChange={(checked) => setMode(checked ? "direct" : "agent")}
+                                    disabled={isProcessing}
                                 />
-                            ))}
-                        </div>
-                    )}
-                </div>
+                            </Space>
+                        </Tooltip>
+                        {mode === "agent" && (
+                            <Tooltip title={debug ? "Debug 模式已开启（显示中间步骤）" : "开启 Debug 模式"}>
+                                <Button
+                                    size="small"
+                                    type={debug ? "primary" : "default"}
+                                    icon={<BugOutlined />}
+                                    onClick={() => setDebug(!debug)}
+                                    style={debug ? { background: "#faad14", borderColor: "#faad14" } : {}}
+                                >
+                                    Debug
+                                </Button>
+                            </Tooltip>
+                        )}
+                        <Tooltip title={connected ? "已连接" : "未连接"}>
+                            <Badge dot={connected} color={connected ? "green" : "red"}>
+                                {connected ? (
+                                    <WifiOutlined style={{ color: "#52c41a" }} />
+                                ) : (
+                                    <DisconnectOutlined style={{ color: "#ff4d4f" }} />
+                                )}
+                            </Badge>
+                        </Tooltip>
+                        {!connected && (
+                            <Button size="small" icon={<ReloadOutlined />} onClick={reconnect}>
+                                重连
+                            </Button>
+                        )}
+                        <Button
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={clearMessages}
+                            disabled={messages.length === 0}
+                        >
+                            清空
+                        </Button>
+                    </Space>
+                </Header>
 
-                <InputPanel
-                    onSend={sendMessage}
-                    isProcessing={isProcessing}
-                    connected={connected}
-                    placeholder={
-                        mode === "direct"
-                            ? "直连模式 — 输入问题，流式回答... (Enter 发送)"
-                            : "输入你的问题... (Enter 发送, Shift+Enter 换行)"
-                    }
-                />
-            </Content>
+                <Content
+                    style={{
+                        flex: 1,
+                        overflow: "hidden",
+                        display: "flex",
+                        flexDirection: "column",
+                        background: "#f5f5f5",
+                    }}
+                >
+                    <div
+                        ref={scrollRef}
+                        style={{
+                            flex: 1,
+                            overflowY: "auto",
+                            padding: "16px 24px",
+                        }}
+                    >
+                        {allItems.length === 0 ? (
+                            <div
+                                style={{
+                                    display: "flex",
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                    height: "100%",
+                                    color: "#999",
+                                    fontSize: 16,
+                                }}
+                            >
+                                <Text type="secondary">
+                                    开始对话吧，我会帮你完成任务 🚀
+                                </Text>
+                            </div>
+                        ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                {allItems.map((msg) => (
+                                    <MessageBubble
+                                        key={msg.id}
+                                        message={msg}
+                                        isTyping={
+                                            msg.id === currentAssistantMsg?.id &&
+                                            !msg.content &&
+                                            isProcessing
+                                        }
+                                        isStreaming={
+                                            msg.id === currentAssistantMsg?.id &&
+                                            isStreaming
+                                        }
+                                        debug={debug}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <InputPanel
+                        onSend={sendMessage}
+                        isProcessing={isProcessing}
+                        connected={connected}
+                        placeholder={
+                            mode === "direct"
+                                ? "直连模式 — 输入问题，流式回答... (Enter 发送)"
+                                : "输入你的问题... (Enter 发送, Shift+Enter 换行)"
+                        }
+                    />
+                </Content>
+            </Layout>
         </Layout>
     );
 };
