@@ -17,6 +17,8 @@
 - 📦 支持本地 Skill 插件扩展能力
 - 🔌 支持代理配置
 - 🌍 支持 Web 网页端对话（React + Ant Design + Ant Design X）
+- 🎙️ 支持 Web 端语音输入（浏览器麦克风 + DashScope 实时语音识别）
+- 🖼️ 支持 Web 端图片附件输入（视觉模型 OCR 识别图片文字后提问）
 
 ---
 
@@ -67,7 +69,7 @@ cd yuan-claw && npm install && npm run build
   "MODEL_NAME": "gpt-4o-mini"
 }
 ```
-可选配置：`BAIDU_API_KEY`（搜索）、`HTTP_PROXY`（代理）。
+可选配置：`BAIDU_API_KEY`（搜索）、`HTTP_PROXY`（代理）、`STT_MODEL`（Web 端语音识别模型，缺省 `fun-asr-realtime`）、`VISION_MODEL`（Web 端图片 OCR 视觉模型，缺省 `qwen-vl-plus`）。
 
 ### 3. 运行
 ```bash
@@ -90,11 +92,13 @@ npm run dev:web
 
 | 配置项 | 说明 |
 | :--- | :--- |
-| `MODEL_API_KEY` | 大模型 API Key |
+| `MODEL_API_KEY` | 大模型 API Key（同时用作 Web 端语音识别的 DashScope 密钥） |
 | `MODEL_BASE_URL` | 兼容 OpenAI 的 API 地址 |
 | `MODEL_NAME` | 模型名称 |
 | `BAIDU_API_KEY` | 百度搜索 API Key（启用搜索工具） |
 | `HTTP_PROXY` | 网络代理地址 |
+| `STT_MODEL` | Web 端语音识别模型名，可选，缺省 `fun-asr-realtime` |
+| `VISION_MODEL` | Web 端图片识别（OCR）使用的视觉模型名，可选，缺省 `qwen-vl-plus` |
 
 ## Usage
 
@@ -142,6 +146,41 @@ npm run start:web
 - 🔧 工具调用状态实时展示
 - 📱 响应式布局
 - 🔄 多轮对话上下文保持
+- 🎙️ 语音输入（浏览器麦克风实时识别）
+- 🖼️ 图片附件输入（视觉模型 OCR 识别图片文字）
+
+### 语音输入
+
+Web 端底部输入区内置话筒按钮，可将语音实时转写为文字后发送：
+
+1. 点击**话筒按钮**开始录音，浏览器采集麦克风音频（首次会请求麦克风权限）；
+2. 录音过程中，输入框实时显示识别中的文字；
+3. 再次点击**话筒按钮**停止录音，最终识别结果会**追加**到输入框已有内容之后（不覆盖、不自动发送）；
+4. 可继续手动编辑，确认后点击**发送按钮**（或按 Enter）发送，与文字输入走完全相同的对话链路。
+
+**配置说明：**
+
+- 语音识别使用**阿里云百炼 DashScope 实时语音识别（ASR）**，通过独立的 `/ws/audio` WebSocket 通道传输音频；
+- 复用配置中的 `MODEL_API_KEY` 作为鉴权密钥，识别模型由 `STT_MODEL` 指定（缺省 `fun-asr-realtime`）；
+- 该密钥需能访问公共端点 `wss://dashscope.aliyuncs.com`（语音识别**不使用** `MODEL_BASE_URL`）。若密钥不被该端点接受，界面会提示 `STT 错误`，但不影响文字对话；
+- 浏览器麦克风权限要求安全上下文：`localhost` 或 `https` 页面可用。
+
+### 图片附件输入
+
+Web 端支持通过图片附件上传图片，由视觉模型自动识别图中文字（OCR），识别结果作为附件文字追加到用户输入中，一并发送给大模型进行提问。
+
+1. 点击输入区左侧的**图片按钮**，选择一张或多张图片（也可通过 `Ctrl+V` / `Cmd+V` 直接粘贴剪贴板中的图片）；
+2. 选中的图片以缩略图形式预览在输入框上方，可逐个点击关闭按钮移除；
+3. 输入文字后点击**发送**（或按 Enter），系统会先调用视觉模型对图片进行 OCR 文字识别；
+4. 识别完成后，识别出的文字作为**附件文字**追加到用户输入文字后面，一起发送给大模型；
+5. 消息气泡中会展示图片缩略图和附件识别文字区域，方便查看。
+
+**配置说明：**
+
+- 图片识别使用**视觉大模型**（如阿里云 `qwen-vl-plus`）作为 OCR 引擎，通过 OpenAI 兼容的多模态 API 发送图片；
+- 复用配置中的 `MODEL_API_KEY` 和 `MODEL_BASE_URL`，视觉模型由 `VISION_MODEL` 指定（缺省 `qwen-vl-plus`）；
+- 若未配置 `VISION_MODEL` 或视觉模型不可用，发送图片时会提示错误，但不影响纯文字对话；
+- 单次最多支持 5 张图片，每张图片最大 5MB，支持 PNG / JPG / GIF / WebP 格式。
 
 ## Development
 
