@@ -10,6 +10,11 @@ const DEFAULT_SETTINGS = {
     OPENAI_MODEL: "",
     BAIDU_API_KEY: "",
     STT_MODEL: "fun-asr-realtime",
+    // 要接入的 MCP 服务端列表。示例（Spring AI MCP 天气服务，SSE 传输）：
+    // "MCP_SERVERS": [
+    //   { "name": "weather", "url": "http://localhost:8086/sse", "transport": "sse" }
+    // ]
+    MCP_SERVERS: [],
 };
 
 export async function ensureUserConfigInitialized(): Promise<{

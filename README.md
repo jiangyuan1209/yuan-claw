@@ -15,6 +15,7 @@
 - ⌨️ 支持 `↑ / ↓ / Enter` 选择确认项
 - 🔁 支持会话级”总是允许”模式
 - 📦 支持本地 Skill 插件扩展能力
+- 🔗 支持接入 MCP（Model Context Protocol）服务端，动态发现并调用远程工具
 - 🔌 支持代理配置
 - 🌍 支持 Web 网页端对话（React + Ant Design + Ant Design X）
 - 🎙️ 支持 Web 端语音输入（浏览器麦克风 + DashScope 实时语音识别）
@@ -69,7 +70,7 @@ cd yuan-claw && npm install && npm run build
   "MODEL_NAME": "gpt-4o-mini"
 }
 ```
-可选配置：`BAIDU_API_KEY`（搜索）、`HTTP_PROXY`（代理）、`STT_MODEL`（Web 端语音识别模型，缺省 `fun-asr-realtime`）、`VISION_MODEL`（Web 端图片 OCR 视觉模型，缺省 `qwen-vl-plus`）。
+可选配置：`BAIDU_API_KEY`（搜索）、`HTTP_PROXY`（代理）、`STT_MODEL`（Web 端语音识别模型，缺省 `fun-asr-realtime`）、`VISION_MODEL`（Web 端图片 OCR 视觉模型，缺省 `qwen-vl-plus`）、`MCP_SERVERS`（接入的 MCP 服务端列表）。
 
 ### 3. 运行
 ```bash
@@ -99,6 +100,7 @@ npm run dev:web
 | `HTTP_PROXY` | 网络代理地址 |
 | `STT_MODEL` | Web 端语音识别模型名，可选，缺省 `fun-asr-realtime` |
 | `VISION_MODEL` | Web 端图片识别（OCR）使用的视觉模型名，可选，缺省 `qwen-vl-plus` |
+| `MCP_SERVERS` | 要接入的 MCP 服务端列表，可选，缺省 `[]`（详见 [MCP 接入](#mcp-接入)） |
 
 ## Usage
 
@@ -123,6 +125,52 @@ npm run dev:web
 ### Skills 扩展
 在 `~/.yuan-claw/skills/` 下创建文件夹并添加 `SKILL.md` 即可扩展 Agent 能力。
 格式：YAML 元数据 + Markdown 正文。
+
+## MCP 接入
+
+yuan-claw 可作为 **MCP（Model Context Protocol）客户端**接入外部 MCP 服务端：启动时连接服务端、拉取其工具清单（`tools/list`），并把每个远程工具包装成本地工具注册进 Agent，之后大模型即可像调用内置工具一样调用它们（`tools/call`）。
+
+### 配置
+
+在 `~/.yuan-claw/settings.json` 的 `MCP_SERVERS` 数组中登记服务端：
+
+```json
+{
+  "MCP_SERVERS": [
+    {
+      "name": "weather",
+      "url": "http://localhost:8086/sse",
+      "transport": "sse"
+    }
+  ]
+}
+```
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `name` | 服务端标识，仅用于启动日志展示 |
+| `url` | 服务端地址。SSE 传输通常以 `/sse` 结尾 |
+| `transport` | 传输协议，`sse`（缺省）或 `streamable-http`（新版服务端） |
+
+### 行为说明
+
+- **动态发现**：远程工具的参数说明（JSON Schema）会自动拼接进工具描述，供大模型判断如何传参；
+- **审批联动**：依据工具的 `annotations` 映射风险级别——`destructiveHint` 视为 `dangerous`（调用前需确认），只读工具视为 `safe`，复用内置的工具确认机制；
+- **容错启动**：单个服务端连接失败只会打印一条 `[mcp] failed to connect` 告警，不影响 yuan-claw 正常启动；
+- **命名冲突**：与本地内置工具重名的远程工具会被跳过，本地工具优先。
+
+### 快速验证
+
+以本地 Spring AI MCP 天气服务为例：
+
+```bash
+# 1. 先启动 MCP 服务端（另开一个终端）
+cd /path/to/McpServer && ./mvnw spring-boot:run
+
+# 2. 启动 yuan-claw，日志出现 [mcp] connected "weather" (N tools) 即接入成功
+yuan-claw
+# 然后直接提问，例如：北京今天天气怎么样？
+```
 
 ## Web 模式
 

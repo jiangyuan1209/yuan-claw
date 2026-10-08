@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import { createToolRegistry } from "../tools/registry.js";
+import { registerMcpTools } from "../tools/mcp/mcp-client.js";
 import { SessionStore } from "../memory/session-store.js";
 import { createWebEventBusBroadcast } from "../events/web-event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
@@ -57,6 +58,9 @@ async function main() {
 
     // Shared resources (same as CLI)
     const tools = createToolRegistry({ workspaceRoot, config });
+    // 接入配置的 MCP 服务端。Web 服务是长驻进程，MCP 连接在整个生命周期内保持，
+    // 因此这里不主动 close（进程退出时由操作系统回收 socket）。
+    await registerMcpTools(tools, config);
     const modelClient = createModelClient({ config });
     const sessionStore = new SessionStore();
 

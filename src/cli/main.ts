@@ -5,6 +5,7 @@ import { parseCliArgs } from "./parse-args.js";
 import { getHelpText } from "./help.js";
 import { resolveWorkspaceRoot } from "../security/path-guards.js";
 import { createToolRegistry } from "../tools/registry.js";
+import { registerMcpTools } from "../tools/mcp/mcp-client.js";
 import { SessionStore } from "../memory/session-store.js";
 import { createConsoleEventBus } from "../events/event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
@@ -84,6 +85,10 @@ async function main() {
         config,
     });
 
+    // 接入配置的 MCP 服务端，把远程工具合并进工具表。
+    // 单次执行结束后必须 closeMcp()，否则 SSE 的 socket 会阻止进程退出。
+    const closeMcp = await registerMcpTools(tools, config);
+
     const sessionStore = new SessionStore();
     const eventBus = createConsoleEventBus({
         json: args.json,
@@ -139,6 +144,9 @@ async function main() {
             console.log(result.finalMessage);
         }
     }
+
+    // 单次任务完成，断开 MCP 连接，避免 SSE socket 阻止进程退出。
+    await closeMcp();
 }
 
 main().catch((error) => {

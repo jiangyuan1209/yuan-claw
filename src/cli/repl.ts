@@ -3,6 +3,7 @@ import { multiline, select, isCancel } from "@clack/prompts";
 import type { ChatMessage } from "../memory/types.js";
 import { resolveWorkspaceRoot } from "../security/path-guards.js";
 import { createToolRegistry } from "../tools/registry.js";
+import { registerMcpTools } from "../tools/mcp/mcp-client.js";
 import { SessionStore } from "../memory/session-store.js";
 import { createConsoleEventBus } from "../events/event-bus.js";
 import {
@@ -43,6 +44,10 @@ export async function startRepl(options: StartReplOptions) {
         workspaceRoot,
         config: options.config,
     });
+
+    // 接入配置的 MCP 服务端，把远程工具合并进工具表。
+    // closeMcp 用于 REPL 退出时断开 SSE 连接，否则打开的 socket 会阻止进程退出。
+    const closeMcp = await registerMcpTools(tools, options.config);
 
     const modelClient = createModelClient({
         model: options.model,
@@ -248,4 +253,7 @@ Commands:
             console.error(error);
         }
     }
+
+    // REPL 主循环结束后，断开所有 MCP 连接，让进程能够自然退出。
+    await closeMcp();
 }
