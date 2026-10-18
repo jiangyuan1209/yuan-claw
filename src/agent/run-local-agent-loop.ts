@@ -3,6 +3,7 @@ import type { Tool } from "../tools/types.js";
 import type { EventBus } from "../events/event-bus.js";
 import { buildSystemPrompt } from "./build-system-prompt.js";
 import { parseAgentResponse } from "./parse-agent-response.js";
+import { createSpawnAgentTool, createSpawnAgentsTool } from "./subagent.js";
 import type { ApprovalDecision } from "./read-approval.js";
 import { SkillsRuntime } from "../skills/runtime.js";
 import { compressHistoryIfNeeded } from "./compress-history.js";
@@ -48,6 +49,18 @@ export type RunLocalAgentLoopParams = {
     onMessagesUpdated?: (messages: ChatMessage[]) => Promise<void>;
     approvalMode?: ApprovalMode;
     requestApproval?: (message: string) => Promise<ApprovalDecision>;
+    /**
+     * ===== 多智能体（协调者 + 专家）相关 =====
+     *
+     * depth: 当前 Agent 的层级。0 = 主协调者（用户直接对话的那个），
+     *        1 = 被 spawn_agent 委派的子智能体（专家）。
+     * agentRole: 子智能体的角色定位，注入到 system prompt；协调者留空。
+     * enableSubagents: 是否给本次循环注入 spawn_agent 工具。缺省为 depth===0，
+     *        即只有主协调者能委派；子智能体显式传 false，保证「单层」不再下钻。
+     */
+    depth?: number;
+    agentRole?: string;
+    enableSubagents?: boolean;
 };
 
 function stringifyForModel(value: unknown): string {
@@ -98,6 +111,9 @@ export async function runLocalAgentLoop(
         previousMessages = [],
         onMessagesUpdated,
         requestApproval,
+        depth = 0,
+        agentRole,
+        enableSubagents,
     } = params;
 
     let approvalMode: ApprovalMode = params.approvalMode ?? "ask";
@@ -114,15 +130,45 @@ export async function runLocalAgentLoop(
         input: userInput,
     });
 
-    // Load skills and use LLM planning to select relevant ones
-    const skillsRuntime = new SkillsRuntime();
-    await skillsRuntime.reload();
-    const skillsPrompt = await skillsRuntime.planAndBuildPrompt(
-        userInput,
-        Array.from(tools.values()),
-        modelClient,
-        eventBus,
-    );
+    /**
+     * ===== 多智能体：为协调者注入 spawn_agent 工具 =====
+     *
+     * 只有主协调者（默认 depth===0）会获得 spawn_agent，用于把子任务委派给只读
+     * 专家。effectiveTools 是本次循环真正使用的工具表：system prompt、技能规划、
+     * 工具查找都基于它。子智能体（depth>0 或 enableSubagents=false）不注入，
+     * 从而在结构上保证「单层委派」。
+     */
+    const subagentsEnabled = enableSubagents ?? depth === 0;
+    let effectiveTools = tools;
+    if (subagentsEnabled) {
+        const spawnDeps = {
+            runLoop: runLocalAgentLoop,
+            modelClient,
+            parentEventBus: eventBus,
+            allTools: tools,
+            depth,
+        };
+        const spawnTool = createSpawnAgentTool(spawnDeps);
+        const spawnManyTool = createSpawnAgentsTool(spawnDeps);
+        effectiveTools = new Map(tools);
+        effectiveTools.set(spawnTool.name, spawnTool);
+        effectiveTools.set(spawnManyTool.name, spawnManyTool);
+    }
+
+    // Load skills and use LLM planning to select relevant ones.
+    // 子智能体（depth>0）跳过技能规划：保持精简、减少一次 LLM 调用，
+    // 技能主要服务于面向用户的主协调者。
+    let skillsPrompt = "";
+    if (depth === 0) {
+        const skillsRuntime = new SkillsRuntime();
+        await skillsRuntime.reload();
+        skillsPrompt = await skillsRuntime.planAndBuildPrompt(
+            userInput,
+            Array.from(effectiveTools.values()),
+            modelClient,
+            eventBus,
+        );
+    }
 
     const historyMessages = previousMessages.filter(
         (message) => message.role !== "system",
@@ -159,7 +205,11 @@ export async function runLocalAgentLoop(
     const messages: ChatMessage[] = [
         {
             role: "system",
-            content: buildSystemPrompt(Array.from(tools.values()), skillsPrompt),
+            content: buildSystemPrompt(
+                Array.from(effectiveTools.values()),
+                skillsPrompt,
+                agentRole,
+            ),
         },
         ...compressedHistory,
         {
@@ -305,7 +355,7 @@ export async function runLocalAgentLoop(
         }
 
         if (response.type === "tool_call") {
-            const tool = tools.get(response.toolName);
+            const tool = effectiveTools.get(response.toolName);
 
             if (!tool) {
                 const errorMessage = `Unknown tool "${response.toolName}".`;

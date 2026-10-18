@@ -29,6 +29,14 @@ export type AgentEvent =
     type: "run_end";
     reason: "final" | "max_steps_exceeded";
     step: number;
+}
+    | { type: "subagent_start"; agent: string; task: string }
+    | {
+    type: "subagent_end";
+    agent: string;
+    success: boolean;
+    result?: string;
+    error?: string;
 };
 
 export type EventBus = {
@@ -112,6 +120,19 @@ export function createConsoleEventBus(
                     console.error(`[run_error] ${event.stage}: ${event.error}`);
                 }
 
+                // 多智能体委派：即使在非 debug 模式也简要展示，让用户知道发生了子智能体协作
+                if (!quiet && event.type === "subagent_start") {
+                    console.log(`🤖 委派子智能体[${event.agent}]：${event.task}`);
+                }
+
+                if (!quiet && event.type === "subagent_end") {
+                    console.log(
+                        event.success
+                            ? `✅ 子智能体[${event.agent}] 完成`
+                            : `⚠️ 子智能体[${event.agent}] 失败：${event.error ?? ""}`
+                    );
+                }
+
                 // Show processing indicator on run_start, hide on run_end
                 if (event.type === "run_start") {
                     showProcessing();
@@ -185,6 +206,22 @@ export function createConsoleEventBus(
 
                 case "run_end":
                     console.log(`\n[run_end] reason=${event.reason} step=${event.step}`);
+                    break;
+
+                case "subagent_start":
+                    console.log(`\n[subagent_start] agent=${event.agent}`);
+                    console.log(`  task: ${event.task}`);
+                    break;
+
+                case "subagent_end":
+                    console.log(
+                        `\n[subagent_end] agent=${event.agent} success=${event.success}`
+                    );
+                    if (event.success) {
+                        console.log(`  result: ${event.result ?? ""}`);
+                    } else {
+                        console.log(`  error: ${event.error ?? ""}`);
+                    }
                     break;
             }
         },
