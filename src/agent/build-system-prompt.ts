@@ -1,5 +1,18 @@
 import type { Tool } from "../tools/types.js";
 
+/**
+ * 生成当前日期字符串（含星期），注入系统提示词。
+ * 子智能体上下文隔离、看不到主对话，若不注入日期，面对「明天/下周」等相对时间
+ * 只能瞎猜，导致检索到过期信息。协调者与专家都需要它。
+ */
+function currentDateString(now = new Date()): string {
+    const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}（星期${weekdays[now.getDay()]}）`;
+}
+
 function formatToolsForPrompt(tools: Tool[]): string {
     if (tools.length === 0) {
         return "- 没有可用的工具。";
@@ -75,6 +88,9 @@ export function buildSystemPrompt(
 
     return [
         ...identity,
+        "",
+        `当前日期：${currentDateString()}`,
+        "涉及“今天/明天/下周”等相对时间时，请以上述当前日期为基准换算成绝对日期后再处理（尤其是委派子智能体或联网搜索时）。",
         "",
         "关键输出规则：",
         "你必须仅返回一个 JSON 对象，不能包含其他任何内容。",
