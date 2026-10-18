@@ -28,6 +28,7 @@
     "start": "node dist/cli/main.js",
     "start:web": "node dist/web/server.js",
     "check": "tsc --noEmit",
+    "test": "node --import tsx --test test/**/*.test.ts",
     "publish:npm": "./publish-npm.sh",
     "publish:gh": "./publish-gh.sh",
     "link:global": "npm run build && npm link",
