@@ -5,7 +5,7 @@ type ModelClient = {
 };
 
 /** 历史对话压缩阈值：超过此字符数时触发 LLM 压缩 */
-const COMPRESSION_THRESHOLD = 100;
+const COMPRESSION_THRESHOLD = 100000;
 
 /** 压缩后保留最近的消息数量（不压缩，保持原文） */
 const PRESERVE_RECENT_COUNT = 6;
