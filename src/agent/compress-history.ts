@@ -1,35 +1,22 @@
 import type { ChatMessage } from "../memory/types.js";
+import { countMessagesChars } from "../memory/message-chars.js";
 
 type ModelClient = {
     generate: (messages: ChatMessage[]) => Promise<string>;
 };
 
 /** 历史对话压缩阈值：超过此字符数时触发 LLM 压缩 */
-const COMPRESSION_THRESHOLD = 100000;
+export const COMPRESSION_THRESHOLD = 1_000_000;
 
 /** 压缩后保留最近的消息数量（不压缩，保持原文） */
 const PRESERVE_RECENT_COUNT = 6;
 
-/** 计算消息数组的总字符数 */
-function countTotalChars(messages: ChatMessage[]): number {
-    let total = 0;
-    for (const msg of messages) {
-        if (typeof msg.content === "string") {
-            total += msg.content.length;
-        } else if (Array.isArray(msg.content)) {
-            for (const part of msg.content) {
-                if (part.type === "text") {
-                    total += part.text.length;
-                }
-                // 图片部分按固定 500 字符估算
-                if (part.type === "image_url") {
-                    total += 500;
-                }
-            }
-        }
-    }
-    return total;
-}
+/**
+ * 送入压缩模型的最大字符数，超出部分取头尾各一半。
+ * 与 COMPRESSION_THRESHOLD 保持 0.8 倍关系：刚过阈值的历史可以完整压缩，
+ * 只有极度膨胀的历史才会丢弃中段。
+ */
+const MAX_COMPRESS_INPUT = 800_000;
 
 /** 将消息序列化为文本格式供 LLM 压缩 */
 function serializeMessages(messages: ChatMessage[]): string {
@@ -79,23 +66,18 @@ const COMPRESSION_SYSTEM_PROMPT = `你是一个对话历史压缩助手。你的
 - 压缩后的摘要应该足够详细，使得后续的 LLM 能够基于此摘要继续对话而不丢失上下文`;
 
 /**
- * 压缩历史对话。
+ * 压缩历史对话（无条件执行）。
  *
- * 当消息总字符数超过阈值（100,000）时，将较早的消息通过 LLM 压缩为结构化摘要，
- * 保留最近 N 条消息原文不变。
+ * 将较早的消息通过 LLM 压缩为结构化摘要，保留最近 N 条消息原文不变。
+ * 返回压缩后的消息数组：[...system 消息, 压缩摘要(user角色), ...最近N条原文消息]
  *
- * 返回压缩后的消息数组：[压缩摘要(user角色), ...最近N条原文消息]
+ * 由 compressHistoryIfNeeded（自动触发）与 Web 端「手动压缩」按钮共用。
  */
-export async function compressHistoryIfNeeded(
+export async function compressHistory(
     messages: ChatMessage[],
     modelClient: ModelClient,
 ): Promise<ChatMessage[]> {
-    const totalChars = countTotalChars(messages);
-
-    debugger
-    if (totalChars <= COMPRESSION_THRESHOLD) {
-        return messages;
-    }
+    const totalChars = countMessagesChars(messages);
 
     // 分离 system 消息（不参与压缩）
     const systemMessages = messages.filter((m) => m.role === "system");
@@ -114,9 +96,10 @@ export async function compressHistoryIfNeeded(
 
     // 如果序列化后的文本过长，截取前后部分（保留头尾信息）
     let textToCompress = serializedHistory;
-    if (textToCompress.length > 80_000) {
-        const head = textToCompress.slice(0, 40_000);
-        const tail = textToCompress.slice(-40_000);
+    if (textToCompress.length > MAX_COMPRESS_INPUT) {
+        const half = Math.floor(MAX_COMPRESS_INPUT / 2);
+        const head = textToCompress.slice(0, half);
+        const tail = textToCompress.slice(-half);
         textToCompress = `${head}\n\n...[中间部分省略]...\n\n${tail}`;
     }
 
@@ -145,4 +128,20 @@ export async function compressHistoryIfNeeded(
         );
         return [...systemMessages, ...recentMessages];
     }
+}
+
+/**
+ * 压缩历史对话。
+ *
+ * 当消息总字符数超过阈值（COMPRESSION_THRESHOLD）时，调用 compressHistory 压缩；
+ * 未超过阈值则原样返回，不产生 LLM 调用。
+ */
+export async function compressHistoryIfNeeded(
+    messages: ChatMessage[],
+    modelClient: ModelClient,
+): Promise<ChatMessage[]> {
+    if (countMessagesChars(messages) <= COMPRESSION_THRESHOLD) {
+        return messages;
+    }
+    return compressHistory(messages, modelClient);
 }

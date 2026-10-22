@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from "react";
-import { Button, Typography, Tag, message, theme } from "antd";
+import { Button, Typography, Tag, message, theme, Tooltip } from "antd";
 import { Sender } from "@ant-design/x";
 import {
     AudioOutlined,
@@ -7,11 +7,12 @@ import {
     LoadingOutlined,
     PictureOutlined,
     CloseCircleFilled,
+    FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 import { useAudioSTT } from "../hooks/useAudioSTT";
 import { useImageAttachments } from "../hooks/useImageAttachments";
-import type { ImageAttachment } from "../types";
+import type { ImageAttachment, Workspace } from "../types";
 
 const { Text } = Typography;
 
@@ -24,6 +25,10 @@ interface InputPanelProps {
     connected: boolean;
     /** 输入框的占位提示 */
     placeholder?: string;
+    /** 当前对话所属的工作区，为 null 表示还没在工作区下创建对话 */
+    workspace?: Workspace | null;
+    /** 点击工作区按钮：打开工作区选择/创建面板 */
+    onSelectWorkspace?: () => void;
 }
 
 /**
@@ -47,6 +52,8 @@ export const InputPanel: React.FC<InputPanelProps> = ({
     isProcessing,
     connected,
     placeholder,
+    workspace,
+    onSelectWorkspace,
 }) => {
     const { token } = theme.useToken();
     const [inputValue, setInputValue] = useState("");
@@ -305,9 +312,50 @@ export const InputPanel: React.FC<InputPanelProps> = ({
                 value={senderValue}
                 onChange={setInputValue}
                 onSubmit={handleSend}
+                prefix={
+                    <Tooltip
+                        title={
+                            workspace ? (
+                                <div>
+                                    <div>当前工作区：{workspace.name}</div>
+                                    <div>主目录：{workspace.primaryDir}</div>
+                                    <div>点击可新建工作区</div>
+                                </div>
+                            ) : (
+                                "选择或创建一个工作区后才能对话"
+                            )
+                        }
+                    >
+                        <Button
+                            type={workspace ? "default" : "dashed"}
+                            size="small"
+                            icon={<FolderOpenOutlined />}
+                            onClick={onSelectWorkspace}
+                            style={{
+                                maxWidth: 180,
+                                ...(workspace ? { borderColor: token.colorPrimary, color: token.colorPrimary } : {}),
+                            }}
+                        >
+                            <span
+                                style={{
+                                    display: "inline-block",
+                                    maxWidth: 130,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                    verticalAlign: "bottom",
+                                }}
+                            >
+                                {workspace ? workspace.name : "选择工作区"}
+                            </span>
+                        </Button>
+                    </Tooltip>
+                }
                 placeholder={
                     placeholder ??
-                    "输入文字，或点击图片/粘贴图片添加附件 (Enter 发送)"
+                    (workspace
+                        ? "输入文字，或点击图片/粘贴图片添加附件 (Enter 发送)"
+                        : "请先在左侧或输入框旁选择一个工作区")
                 }
                 loading={isProcessing}
                 disabled={!connected}

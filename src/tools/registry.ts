@@ -23,17 +23,29 @@ type CreateToolRegistryOptions = {
     config?: AppConfig;
 };
 
+/**
+ * 与 workspaceRoot 绑定的工具集。
+ *
+ * 这些工具在构造时就把工作区根目录固化进了闭包，切换工作区主目录时必须重建；
+ * 其余工具（web_search、MCP 工具等）与目录无关，可以在多个工作区之间复用。
+ */
+export function createWorkspaceBoundTools(workspaceRoot: string): Tool[] {
+    return [
+        createReadFileTool({ workspaceRoot }),
+        createWriteFileTool({ workspaceRoot }),
+        createListFilesTool({ workspaceRoot }),
+        createGrepTextTool({ workspaceRoot }),
+        createShellExecTool({ workspaceRoot }),
+        createGitStatusTool({ workspaceRoot }),
+        createGitDiffTool({ workspaceRoot }),
+    ];
+}
+
 export function createToolRegistry(
     options: CreateToolRegistryOptions
 ): Map<string, Tool> {
     const tools: Tool[] = [
-        createReadFileTool({ workspaceRoot: options.workspaceRoot }),
-        createWriteFileTool({ workspaceRoot: options.workspaceRoot }),
-        createListFilesTool({ workspaceRoot: options.workspaceRoot }),
-        createGrepTextTool({ workspaceRoot: options.workspaceRoot }),
-        createShellExecTool({ workspaceRoot: options.workspaceRoot }),
-        createGitStatusTool({ workspaceRoot: options.workspaceRoot }),
-        createGitDiffTool({ workspaceRoot: options.workspaceRoot }),
+        ...createWorkspaceBoundTools(options.workspaceRoot),
         // createHttpFetchTool(),
         // createExtractReadableTextTool(),
     ];

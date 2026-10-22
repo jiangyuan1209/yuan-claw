@@ -10,3 +10,13 @@ export function getUserConfigDir(): string {
 export function getUserSettingsPath(): string {
     return path.join(getUserConfigDir(), "settings.json");
 }
+
+/** 对话历史的绝对存储目录（不随启动目录变化） */
+export function getUserHistoryDir(): string {
+    return path.join(getUserConfigDir(), "history");
+}
+
+/** 工作区元数据的存储文件 */
+export function getUserWorkspacesPath(): string {
+    return path.join(getUserConfigDir(), "workspaces.json");
+}

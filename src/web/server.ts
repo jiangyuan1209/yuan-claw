@@ -3,15 +3,20 @@ import express from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import path from "node:path";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
+import os from "node:os";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import { createToolRegistry } from "../tools/registry.js";
+import { createToolRegistry, createWorkspaceBoundTools } from "../tools/registry.js";
 import { registerMcpTools } from "../tools/mcp/mcp-client.js";
 import { SessionStore } from "../memory/session-store.js";
+import { WorkspaceStore } from "../memory/workspace-store.js";
+import { countMessagesChars } from "../memory/message-chars.js";
 import { createWebEventBusBroadcast } from "../events/web-event-bus.js";
 import { runLocalAgentLoop } from "../agent/run-local-agent-loop.js";
 import { runDirectLLM } from "../agent/run-direct-llm.js";
+import { compressHistory, COMPRESSION_THRESHOLD } from "../agent/compress-history.js";
 import { createModelClient } from "../model/client.js";
 import { extractImageText } from "../agent/extract-image-text.js";
 import { STTService } from "../lib/stt.js";
@@ -19,13 +24,20 @@ import { AudioSTTBridge } from "./audio-stt-bridge.js";
 import { ensureUserConfigInitialized } from "../config/init-user-config.js";
 import { loadAppConfig } from "../config/load-config.js";
 import { resolveWorkspaceRoot } from "../security/path-guards.js";
-import type { ChatMessage } from "../memory/types.js";
+import type { ChatMessage, Workspace } from "../memory/types.js";
+import type { Tool } from "../tools/types.js";
 import type { AgentEvent } from "../events/event-bus.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DEFAULT_PORT = 3000;
+
+/**
+ * Web 端对话不设实际的轮次上限：Agent 单次任务可以连续调用工具直到给出最终回答。
+ * 保留一个有限值只是为了在模型陷入死循环时最终能终止。
+ */
+const WEB_MAX_STEPS = 9999;
 
 type ChatSession = {
     id: string;
@@ -39,11 +51,23 @@ type ChatSession = {
      * Agent 循环 / 直连调用完成后，通过 onMessagesUpdated 回调更新此数组，
      * 将本次问答（Agent 模式下还包括中间步骤）追加进来，供下一轮使用。
      *
-     * 注意：session 是内存级别的，服务重启后对话记忆丢失。
+     * 注意：session 是内存级别的，服务重启后由磁盘记录（~/.yuan-claw/history）恢复。
      */
     messages: ChatMessage[];
     ws: WebSocket | null;
+    /**
+     * 对话所属的工作区。Web 模式下对话必须在工作区下创建，
+     * 因此正常流程中此字段总是有值；为 null 说明是历史遗留的未关联会话。
+     */
+    workspace: Workspace | null;
 };
+
+/** 向仍处于打开状态的 WebSocket 发送一条 JSON 消息 */
+function sendJson(ws: WebSocket | null, payload: Record<string, unknown>): void {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(payload));
+    }
+}
 
 async function main() {
     // Initialize config (same as CLI does)
@@ -53,16 +77,37 @@ async function main() {
     const app = express();
     app.use(express.json({ limit: "10mb" }));
 
-    // Workspace root defaults to current working directory
+    // 未关联工作区时工具的兜底根目录（当前启动目录）
     const workspaceRoot = resolveWorkspaceRoot(process.cwd());
 
     // Shared resources (same as CLI)
-    const tools = createToolRegistry({ workspaceRoot, config });
+    const baseTools = createToolRegistry({ workspaceRoot, config });
     // 接入配置的 MCP 服务端。Web 服务是长驻进程，MCP 连接在整个生命周期内保持，
     // 因此这里不主动 close（进程退出时由操作系统回收 socket）。
-    await registerMcpTools(tools, config);
+    await registerMcpTools(baseTools, config);
     const modelClient = createModelClient({ config });
     const sessionStore = new SessionStore();
+    const workspaceStore = new WorkspaceStore();
+
+    /**
+     * 按主目录缓存工具表。
+     *
+     * 只有与目录绑定的工具（读写文件、shell、git）需要按工作区主目录重建，
+     * MCP 与联网工具与目录无关，直接复用基础注册表——否则每建一个工作区
+     * 都会重新拉起一套 MCP 子进程连接。
+     */
+    const toolsByRoot = new Map<string, Map<string, Tool>>();
+    function getToolsForRoot(root: string): Map<string, Tool> {
+        let cached = toolsByRoot.get(root);
+        if (!cached) {
+            cached = new Map(baseTools);
+            for (const tool of createWorkspaceBoundTools(root)) {
+                cached.set(tool.name, tool);
+            }
+            toolsByRoot.set(root, cached);
+        }
+        return cached;
+    }
 
     // 语音识别桥接器：将浏览器麦克风采集的音频转发到 DashScope 实时 ASR。
     // 延迟初始化——STTService 在缺少 MODEL_API_KEY 时会抛错，若在启动时构造
@@ -131,6 +176,7 @@ async function main() {
 
         let sessionId: string;
         let restoredMessages: ChatMessage[] = [];
+        let restoredWorkspace: Workspace | null = null;
 
         if (requestedSessionId) {
             sessionId = requestedSessionId;
@@ -138,6 +184,7 @@ async function main() {
             const existingSession = sessions.get(sessionId);
             if (existingSession) {
                 restoredMessages = existingSession.messages;
+                restoredWorkspace = existingSession.workspace;
             }
         } else {
             sessionId = crypto.randomUUID();
@@ -147,38 +194,51 @@ async function main() {
             id: sessionId,
             messages: restoredMessages,
             ws,
+            workspace: restoredWorkspace,
         };
         sessions.set(sessionId, session);
 
         console.log(`WebSocket connected: ${sessionId}${requestedSessionId ? " (restored)" : ""}`);
 
         // Send session ID to client, along with whether this is a restored session
-        ws.send(
-            JSON.stringify({
-                type: "session_init",
-                sessionId,
-                restored: restoredMessages.length > 0,
-            }),
-        );
+        sendJson(ws, {
+            type: "session_init",
+            sessionId,
+            workspaceId: restoredWorkspace?.id ?? null,
+            restored: restoredMessages.length > 0,
+        });
 
-        // 如果是恢复的 session 且有磁盘记录，异步加载完整历史
-        if (requestedSessionId && restoredMessages.length === 0) {
-            sessionStore.load(sessionId).then((data) => {
-                if (data && data.messages.length > 0) {
-                    session.messages = data.messages;
-                    console.log(`[web] Session ${sessionId} restored from disk (${data.messages.length} messages)`);
-                    // 通知前端会话已恢复
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(
-                            JSON.stringify({
-                                type: "session_restored",
-                                sessionId,
-                                messageCount: data.messages.length,
-                            }),
-                        );
+        /**
+         * 指定了 sessionId 时，把该会话的完整历史、所属工作区与字符占用回传前端。
+         *
+         * 内存命中（同一标签页重连）时消息已在 session 里，但工作区归属可能还没解析，
+         * 因此统一走一次「补齐工作区 → 推送 session_restored」，保证前端总能拿到工作区。
+         * 空会话（刚在工作区下点「+」创建、还没发过消息）同样要推送，否则前端不知道主目录。
+         */
+        if (requestedSessionId) {
+            (async () => {
+                if (!session.workspace) {
+                    const data = await sessionStore.load(sessionId);
+                    if (data) {
+                        if (session.messages.length === 0 && data.messages.length > 0) {
+                            session.messages = data.messages;
+                            console.log(`[web] Session ${sessionId} restored from disk (${data.messages.length} messages)`);
+                        }
+                        if (data.workspaceId) {
+                            session.workspace = await workspaceStore.get(data.workspaceId);
+                        }
                     }
                 }
-            }).catch((err) => {
+
+                sendJson(ws, {
+                    type: "session_restored",
+                    sessionId,
+                    messageCount: session.messages.length,
+                    charCount: countMessagesChars(session.messages),
+                    compressionThreshold: COMPRESSION_THRESHOLD,
+                    workspace: session.workspace,
+                });
+            })().catch((err) => {
                 console.error(`[web] Failed to restore session ${sessionId}:`, err);
             });
         }
@@ -189,7 +249,7 @@ async function main() {
             const existing = sessions.get(sessionId);
             if (existing && existing.ws === ws) {
                 if (existing.messages.length > 0) {
-                    sessionStore.save(sessionId, existing.messages).catch((err) => {
+                    sessionStore.save(sessionId, existing.messages, existing.workspace?.id).catch((err) => {
                         console.error(`[web] Failed to persist session ${sessionId}:`, err);
                     });
                 }
@@ -255,6 +315,21 @@ async function main() {
         });
     });
 
+    /**
+     * 解析会话所属的工作区：优先用内存里的，其次回落到磁盘记录。
+     * 历史遗留的会话（迁移自旧的 .sessions 目录）没有工作区，返回 null。
+     */
+    async function resolveSessionWorkspace(session: ChatSession): Promise<Workspace | null> {
+        if (session.workspace) return session.workspace;
+
+        const data = await sessionStore.load(session.id);
+        if (!data?.workspaceId) return null;
+
+        const workspace = await workspaceStore.get(data.workspaceId);
+        session.workspace = workspace;
+        return workspace;
+    }
+
     // REST API: send a chat message
     app.post("/api/chat", async (req, res) => {
         const { message, sessionId, mode } = req.body as {
@@ -268,20 +343,26 @@ async function main() {
             return;
         }
 
-        let session: ChatSession | undefined;
-        if (sessionId) {
-            session = sessions.get(sessionId);
+        const session = sessionId ? sessions.get(sessionId) : undefined;
+        if (!session) {
+            res.status(400).json({ error: "会话不存在，请在工作区下新建对话" });
+            return;
         }
 
-        if (!session) {
-            // Auto-create session if not provided
-            const newId = crypto.randomUUID();
-            session = {
-                id: newId,
-                messages: [],
-                ws: null,
-            };
-            sessions.set(newId, session);
+        // 对话必须在工作区下创建：没有工作区就无法确定默认读写目录与授权范围
+        let workspace: Workspace | null = null;
+        try {
+            workspace = await resolveSessionWorkspace(session);
+        } catch (err) {
+            res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+            return;
+        }
+
+        if (!workspace) {
+            res.status(400).json({
+                error: "该对话未关联工作区，请在工作区下新建对话后再发送消息",
+            });
+            return;
         }
 
         // Prevent duplicate agent loops for the same session
@@ -296,21 +377,19 @@ async function main() {
         // Run loop asynchronously (response already sent)
         runningSessions.add(session.id);
         const handler = mode === "direct" ? runDirectLLMHandler : runAgentLoop;
-        handler(message, session, tools, modelClient, sessionStore)
+        handler(message, session, getToolsForRoot(workspace.primaryDir), modelClient, sessionStore)
             .finally(() => {
                 runningSessions.delete(session.id);
             })
             .catch((err) => {
                 console.error("Agent loop error:", err);
-                if (session?.ws && session.ws.readyState === WebSocket.OPEN) {
-                    session.ws.send(
-                        JSON.stringify({
-                            type: "run_error",
-                            step: 0,
-                            stage: "model_generate" as const,
-                            error: err instanceof Error ? err.message : String(err),
-                        }),
-                    );
+                if (session.ws) {
+                    sendJson(session.ws, {
+                        type: "run_error",
+                        step: 0,
+                        stage: "model_generate" as const,
+                        error: err instanceof Error ? err.message : String(err),
+                    });
                 }
             });
     });
@@ -349,6 +428,9 @@ async function main() {
             res.json({
                 sessionId: id,
                 messages: extractDisplayMessages(memSession.messages),
+                charCount: countMessagesChars(memSession.messages),
+                compressionThreshold: COMPRESSION_THRESHOLD,
+                workspace: memSession.workspace,
             });
             return;
         }
@@ -361,6 +443,11 @@ async function main() {
                     sessionId: id,
                     messages: extractDisplayMessages(data.messages),
                     updatedAt: data.updatedAt,
+                    charCount: countMessagesChars(data.messages),
+                    compressionThreshold: COMPRESSION_THRESHOLD,
+                    workspace: data.workspaceId
+                        ? await workspaceStore.get(data.workspaceId)
+                        : null,
                 });
             } else {
                 res.status(404).json({ error: "Session not found" });
@@ -395,6 +482,185 @@ async function main() {
             res.status(500).json({
                 error: err instanceof Error ? err.message : String(err),
             });
+        }
+    });
+
+    // REST API: 手动压缩指定会话的历史对话
+    app.post("/api/session/:id/compress", async (req, res) => {
+        const { id } = req.params;
+
+        if (runningSessions.has(id)) {
+            res.status(429).json({ error: "对话正在进行中，请结束后再压缩" });
+            return;
+        }
+
+        try {
+            // 内存中的消息比磁盘更新（运行中会实时写盘，但仍以内存为准）
+            const memSession = sessions.get(id);
+            const diskData = memSession ? null : await sessionStore.load(id);
+            const messages = memSession?.messages ?? diskData?.messages;
+
+            if (!messages) {
+                res.status(404).json({ error: "Session not found" });
+                return;
+            }
+
+            const before = countMessagesChars(messages);
+            const compressed = await compressHistory(messages, modelClient);
+            const after = countMessagesChars(compressed);
+
+            const workspaceId = memSession?.workspace?.id ?? diskData?.workspaceId;
+            await sessionStore.save(id, compressed, workspaceId);
+            if (memSession) {
+                memSession.messages = compressed;
+                sendJson(memSession.ws, {
+                    type: "session_stats",
+                    sessionId: id,
+                    charCount: after,
+                    messageCount: compressed.length,
+                    compressionThreshold: COMPRESSION_THRESHOLD,
+                });
+            }
+
+            res.json({
+                sessionId: id,
+                charCountBefore: before,
+                charCountAfter: after,
+                messageCount: compressed.length,
+                compressionThreshold: COMPRESSION_THRESHOLD,
+            });
+        } catch (err) {
+            console.error(`[web] Failed to compress session ${id}:`, err);
+            res.status(500).json({
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    });
+
+    // REST API: 列出所有工作区
+    app.get("/api/workspaces", async (_req, res) => {
+        try {
+            res.json({
+                workspaces: await workspaceStore.list(),
+                compressionThreshold: COMPRESSION_THRESHOLD,
+            });
+        } catch (err) {
+            res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+        }
+    });
+
+    // REST API: 创建工作区（选择一个或多个目录，并指定其中一个为主目录）
+    app.post("/api/workspaces", async (req, res) => {
+        const { name, directories, primaryDir } = req.body as {
+            name?: string;
+            directories?: string[];
+            primaryDir?: string;
+        };
+
+        if (!Array.isArray(directories) || directories.length === 0) {
+            res.status(400).json({ error: "请至少选择一个目录" });
+            return;
+        }
+        if (!primaryDir || typeof primaryDir !== "string") {
+            res.status(400).json({ error: "请指定主目录" });
+            return;
+        }
+
+        try {
+            for (const dir of directories) {
+                const stat = await fsp.stat(dir);
+                if (!stat.isDirectory()) {
+                    res.status(400).json({ error: `${dir} 不是目录` });
+                    return;
+                }
+            }
+
+            const workspace = await workspaceStore.create({
+                name: typeof name === "string" ? name : "",
+                directories,
+                primaryDir,
+            });
+            res.json({ workspace });
+        } catch (err) {
+            res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+        }
+    });
+
+    // REST API: 删除工作区（连同其下的所有对话）
+    app.delete("/api/workspace/:id", async (req, res) => {
+        const { id } = req.params;
+        try {
+            const all = await sessionStore.listSessionsWithMeta();
+            for (const meta of all) {
+                if (meta.workspaceId !== id) continue;
+                await sessionStore.delete(meta.sessionId);
+                sessions.delete(meta.sessionId);
+            }
+            await workspaceStore.delete(id);
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+        }
+    });
+
+    // REST API: 在指定工作区下新建一个对话
+    app.post("/api/workspace/:id/session", async (req, res) => {
+        const { id } = req.params;
+        try {
+            const workspace = await workspaceStore.get(id);
+            if (!workspace) {
+                res.status(404).json({ error: "工作区不存在" });
+                return;
+            }
+
+            const newSessionId = crypto.randomUUID();
+            // 立即落盘，把「对话 → 工作区」的归属关系持久化，
+            // 后续 WebSocket 恢复与 /api/chat 都据此解析主目录与授权范围。
+            await sessionStore.createSession(newSessionId, workspace.id);
+            res.json({ sessionId: newSessionId, workspace });
+        } catch (err) {
+            res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+        }
+    });
+
+    /**
+     * REST API: 浏览服务器本地目录，供前端创建工作区时选择目录。
+     *
+     * 浏览器的 <input type="file" webkitdirectory> 拿不到绝对路径，
+     * 只能由服务端提供目录列表。默认从用户主目录开始。
+     */
+    app.get("/api/fs/dirs", async (req, res) => {
+        const requested = typeof req.query.path === "string" ? req.query.path : "";
+        const target = path.resolve(requested || os.homedir());
+
+        try {
+            const stat = await fsp.stat(target);
+            if (!stat.isDirectory()) {
+                res.status(400).json({ error: `${target} 不是目录` });
+                return;
+            }
+
+            const names = await fsp.readdir(target);
+            const entries: Array<{ name: string; path: string }> = [];
+            for (const name of names.sort((a, b) => a.localeCompare(b, "zh-CN"))) {
+                try {
+                    const childStat = await fsp.stat(path.join(target, name));
+                    if (childStat.isDirectory()) {
+                        entries.push({ name, path: path.join(target, name) });
+                    }
+                } catch {
+                    // 无权限或失效的软链接：跳过
+                }
+            }
+
+            const parent = path.dirname(target);
+            res.json({
+                path: target,
+                parent: parent === target ? null : parent,
+                entries,
+            });
+        } catch (err) {
+            res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
         }
     });
 
@@ -484,6 +750,33 @@ function extractDisplayMessages(messages: ChatMessage[]): Array<{ role: "user" |
     return result;
 }
 
+/**
+ * 会话消息落盘 + 向前端推送最新的字符占用。
+ *
+ * 写盘是 fire-and-forget：Agent 循环每一步都会触发一次持久化，
+ * 同步等待会显著拖慢循环，而丢失最后一次写入的代价可以接受。
+ * session_stats 让前端的进度条在长任务执行过程中也能实时更新。
+ */
+function persistSession(
+    session: ChatSession,
+    sessionStore: SessionStore,
+    messages: ChatMessage[],
+): void {
+    session.messages = messages;
+
+    sessionStore.save(session.id, messages, session.workspace?.id).catch((err) => {
+        console.error(`[web] Failed to persist session ${session.id}:`, err);
+    });
+
+    sendJson(session.ws, {
+        type: "session_stats",
+        sessionId: session.id,
+        charCount: countMessagesChars(messages),
+        messageCount: messages.length,
+        compressionThreshold: COMPRESSION_THRESHOLD,
+    });
+}
+
 async function runAgentLoop(
     userInput: string,
     session: ChatSession,
@@ -496,14 +789,7 @@ async function runAgentLoop(
     );
 
     // Send run_start to the specific WebSocket
-    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
-        session.ws.send(
-            JSON.stringify({
-                type: "run_start",
-                input: userInput,
-            }),
-        );
-    }
+    sendJson(session.ws, { type: "run_start", input: userInput });
 
     try {
         const result = await runLocalAgentLoop({
@@ -511,16 +797,19 @@ async function runAgentLoop(
             modelClient,
             tools,
             eventBus,
-            maxSteps: 30,
+            maxSteps: WEB_MAX_STEPS,
             previousMessages: session.messages,
             approvalMode: "always-allow",
             requestApproval: undefined,
+            workspace: session.workspace
+                ? {
+                      name: session.workspace.name,
+                      primaryDir: session.workspace.primaryDir,
+                      directories: session.workspace.directories,
+                  }
+                : undefined,
             onMessagesUpdated: async (messages: ChatMessage[]) => {
-                session.messages = messages;
-                // 异步持久化到磁盘，不阻塞 Agent 循环
-                sessionStore.save(session.id, messages).catch((err) => {
-                    console.error(`[web] Failed to persist session ${session.id}:`, err);
-                });
+                persistSession(session, sessionStore, messages);
             },
         });
 
@@ -542,14 +831,7 @@ async function runDirectLLMHandler(
     );
 
     // Send run_start to the specific WebSocket
-    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
-        session.ws.send(
-            JSON.stringify({
-                type: "run_start",
-                input: userInput,
-            }),
-        );
-    }
+    sendJson(session.ws, { type: "run_start", input: userInput });
 
     try {
         const result = await runDirectLLM({
@@ -558,10 +840,7 @@ async function runDirectLLMHandler(
             eventBus,
             previousMessages: session.messages,
             onMessagesUpdated: async (messages: ChatMessage[]) => {
-                session.messages = messages;
-                sessionStore.save(session.id, messages).catch((err) => {
-                    console.error(`[web:direct] Failed to persist session ${session.id}:`, err);
-                });
+                persistSession(session, sessionStore, messages);
             },
         });
 

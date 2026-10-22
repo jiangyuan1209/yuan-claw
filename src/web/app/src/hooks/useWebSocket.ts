@@ -42,7 +42,7 @@ export function useWebSocket(options: UseWebSocketOptions) {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const connect = useCallback(() => {
+    const connect = useCallback((sessionIdOverride?: string | null) => {
         // 关闭已有连接，防止重复连接
         const existing = wsRef.current;
         if (existing) {
@@ -51,13 +51,27 @@ export function useWebSocket(options: UseWebSocketOptions) {
             wsRef.current = null;
         }
 
-        // 从 localStorage 读取上次的 sessionId，用于恢复对话
-        const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+        /**
+         * 解析本次连接要恢复的 sessionId：
+         *   - 显式传入字符串：切换到该会话，并写入 localStorage（刷新后仍停留在它上面）
+         *   - 显式传入 null：不关联任何会话（服务端会分配新的）
+         *   - 不传（自动重连）：沿用 localStorage 中上次的会话
+         */
+        let targetSessionId: string | null;
+        if (typeof sessionIdOverride === "string") {
+            localStorage.setItem(SESSION_STORAGE_KEY, sessionIdOverride);
+            targetSessionId = sessionIdOverride;
+        } else if (sessionIdOverride === null) {
+            localStorage.removeItem(SESSION_STORAGE_KEY);
+            targetSessionId = null;
+        } else {
+            targetSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+        }
 
         // 根据当前页面协议自动选择 ws:// 或 wss://
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = storedSessionId
-            ? `${protocol}//${window.location.host}/ws?sessionId=${encodeURIComponent(storedSessionId)}`
+        const wsUrl = targetSessionId
+            ? `${protocol}//${window.location.host}/ws?sessionId=${encodeURIComponent(targetSessionId)}`
             : `${protocol}//${window.location.host}/ws`;
 
         const ws = new WebSocket(wsUrl);
@@ -125,5 +139,9 @@ export function useWebSocket(options: UseWebSocketOptions) {
         localStorage.removeItem(SESSION_STORAGE_KEY);
     }, []);
 
+    /**
+     * 建立 / 重建连接。
+     * 传入 sessionId 可切换到指定会话；不传则沿用 localStorage 中的会话（自动重连场景）。
+     */
     return { connected, sessionId, send, reconnect: connect, clearSession };
 }

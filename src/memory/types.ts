@@ -28,9 +28,30 @@ export type ChatMessage = {
 /**
  * 持久化的会话数据，用于 /save 和 --session 功能。
  * messages 字段存储完整的对话历史，加载后作为 previousMessages 传入 Agent 循环。
+ *
+ * workspaceId：Web 模式下该对话所属的工作区。对话必须在工作区下创建，
+ * Agent 的相对路径读写会以工作区主目录为基准，且无需用户逐次授权。
  */
 export type SessionData = {
     sessionId: string;
     messages: ChatMessage[];
     updatedAt: string;
+    workspaceId?: string;
+};
+
+/**
+ * 工作区：一组文件目录的集合，其中一个被指定为主目录。
+ *
+ * 主目录决定了该工作区下所有对话的默认读写基准——用户没有给出绝对路径时，
+ * Agent 的相对路径都以 primaryDir 解析。其余目录通过系统提示词告知模型，
+ * 由模型用绝对路径访问。
+ */
+export type Workspace = {
+    id: string;
+    name: string;
+    /** 工作区包含的所有目录（绝对路径），必然包含 primaryDir */
+    directories: string[];
+    /** 主目录（绝对路径），相对路径的解析基准 */
+    primaryDir: string;
+    createdAt: string;
 };

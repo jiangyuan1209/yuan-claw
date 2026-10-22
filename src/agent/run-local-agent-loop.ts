@@ -2,6 +2,7 @@ import type { ChatMessage } from "../memory/types.js";
 import type { Tool } from "../tools/types.js";
 import type { EventBus } from "../events/event-bus.js";
 import { buildSystemPrompt } from "./build-system-prompt.js";
+import type { WorkspaceContext } from "./build-system-prompt.js";
 import { parseAgentResponse } from "./parse-agent-response.js";
 import { createSpawnAgentTool, createSpawnAgentsTool } from "./subagent.js";
 import type { ApprovalDecision } from "./read-approval.js";
@@ -27,10 +28,10 @@ export type RunLocalAgentLoopParams = {
      * Agent 循环最多执行的步数。每一步包括：调 LLM → 解析响应 → 执行工具 → 将结果追加到 messages。
      * 超过此限制后循环终止并抛出错误（reason: "max_steps_exceeded"）。
      *
-     * 默认值 8（函数签名处），但实际调用方均覆盖为 30：
+     * 默认值 8（函数签名处），但实际调用方均覆盖：
      *   - CLI REPL: maxSteps = options.maxSteps ?? 30（可通过 --max-steps 覆盖）
      *   - CLI 单次: maxSteps = args.maxSteps ?? 30
-     *   - Web 服务端: maxSteps = 30（硬编码）
+     *   - Web 服务端: maxSteps = 9999（Web 端对话不设实际的轮次上限）
      *
      * 注意：这是单次用户任务内的步骤上限，不是跨轮次的对话记忆限制。
      * 跨轮次的对话记忆通过 previousMessages 传入，目前无轮次大小限制。
@@ -61,6 +62,14 @@ export type RunLocalAgentLoopParams = {
     depth?: number;
     agentRole?: string;
     enableSubagents?: boolean;
+    /**
+     * ===== 工作区上下文（Web 模式） =====
+     *
+     * 对话所属工作区的主目录与目录列表，注入系统提示词，
+     * 使模型在用户未指定绝对路径时默认以主目录为基准读写。
+     * 传入时同时意味着工作区内操作已获授权，模型不再逐个请求确认。
+     */
+    workspace?: WorkspaceContext;
 };
 
 function stringifyForModel(value: unknown): string {
@@ -114,6 +123,7 @@ export async function runLocalAgentLoop(
         depth = 0,
         agentRole,
         enableSubagents,
+        workspace,
     } = params;
 
     let approvalMode: ApprovalMode = params.approvalMode ?? "ask";
@@ -147,6 +157,7 @@ export async function runLocalAgentLoop(
             parentEventBus: eventBus,
             allTools: tools,
             depth,
+            workspace,
         };
         const spawnTool = createSpawnAgentTool(spawnDeps);
         const spawnManyTool = createSpawnAgentsTool(spawnDeps);
@@ -209,6 +220,7 @@ export async function runLocalAgentLoop(
                 Array.from(effectiveTools.values()),
                 skillsPrompt,
                 agentRole,
+                workspace,
             ),
         },
         ...compressedHistory,

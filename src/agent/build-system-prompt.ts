@@ -26,10 +26,40 @@ function formatToolsForPrompt(tools: Tool[]): string {
         .join("\n");
 }
 
+/**
+ * 工作区上下文：注入系统提示词，让模型知道相对路径的解析基准，
+ * 以及工作区内已获授权、无需再向用户请求确认。
+ */
+export type WorkspaceContext = {
+    name: string;
+    primaryDir: string;
+    directories: string[];
+};
+
+function buildWorkspaceSection(workspace: WorkspaceContext): string[] {
+    const others = workspace.directories.filter((d) => d !== workspace.primaryDir);
+
+    return [
+        "",
+        `当前工作区：${workspace.name}`,
+        `主目录（默认工作目录）：${workspace.primaryDir}`,
+        "- 用户没有给出绝对路径时，所有相对路径都以主目录为基准，读写文件、列目录、执行命令都默认在主目录内进行。",
+        ...(others.length > 0
+            ? [
+                "工作区还包含以下目录，需要用其中的文件时请使用绝对路径：",
+                ...others.map((d) => `  - ${d}`),
+              ]
+            : []),
+        "- 本工作区内的读取、写入、修改、命令执行均已获得用户授权，不要再用 ask_confirmation 请求确认，直接调用工具执行即可。",
+        "- 只有在操作会波及工作区目录之外的路径、且存在不可逆风险时，才需要向用户确认。",
+    ];
+}
+
 export function buildSystemPrompt(
     tools: Tool[],
     skillsPrompt?: string,
     agentRole?: string,
+    workspace?: WorkspaceContext,
 ): string {
     const skillsSection = skillsPrompt
         ? ["", "本地技能：", skillsPrompt].join("\n")
@@ -59,7 +89,10 @@ export function buildSystemPrompt(
         "- 对于实时信息（天气、新闻、时事等），始终使用 web_search。",
         "- 每次响应最多调用一个工具。",
         "- 永远不要编造工具结果。",
-        "- 如果工具标记为 [confirm] 或 [dangerous]，请在调用前请求确认。",
+        // 工作区内已整体授权，再要求逐个确认只会浪费一轮交互
+        ...(workspace
+            ? []
+            : ["- 如果工具标记为 [confirm] 或 [dangerous]，请在调用前请求确认。"]),
         "- 在进行更改之前，优先进行安全的只读检查。",
         "- 如果任务已完成，返回最终响应。",
         "- 始终返回有效的 JSON。",
@@ -91,6 +124,7 @@ export function buildSystemPrompt(
         "",
         `当前日期：${currentDateString()}`,
         "涉及“今天/明天/下周”等相对时间时，请以上述当前日期为基准换算成绝对日期后再处理（尤其是委派子智能体或联网搜索时）。",
+        ...(workspace ? buildWorkspaceSection(workspace) : []),
         "",
         "关键输出规则：",
         "你必须仅返回一个 JSON 对象，不能包含其他任何内容。",
@@ -112,7 +146,10 @@ export function buildSystemPrompt(
         "",
         "示例：",
         '{"type":"tool_call","toolName":"read_file","args":{"path":"package.json"}}',
-        '{"type":"ask_confirmation","message":"我需要覆盖 README.md 文件。你希望我继续吗？"}',
+        // 工作区内不需要确认，给出确认示例会诱导模型多问一轮
+        ...(workspace
+            ? []
+            : ['{"type":"ask_confirmation","message":"我需要覆盖 README.md 文件。你希望我继续吗？"}']),
         '{"type":"final","message":"我找到了 src/main.ts 中的问题并进行了说明。"}',
     ].join("\n");
 }

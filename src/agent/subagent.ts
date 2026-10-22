@@ -60,6 +60,8 @@ type CreateSpawnAgentToolDeps = {
     allTools: Map<string, Tool>;
     /** 当前深度（协调者为 0），子智能体将以 depth+1 运行。 */
     depth: number;
+    /** 协调者所在的工作区，专家沿用同一主目录作为相对路径基准。 */
+    workspace?: RunLocalAgentLoopParams["workspace"];
     /** 可覆盖的子智能体步数上限。 */
     maxSteps?: number;
 };
@@ -141,6 +143,7 @@ async function runSubagent(
             previousMessages: [],
             depth: deps.depth + 1,
             agentRole: role,
+            workspace: deps.workspace,
             // 硬保证单层：专家不再获得 spawn_agent / spawn_agents。
             enableSubagents: false,
         });

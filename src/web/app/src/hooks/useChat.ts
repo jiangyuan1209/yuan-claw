@@ -1,6 +1,14 @@
 import { useState, useCallback, useRef } from "react";
 import { message as antdMessage } from "antd";
-import type { AgentEvent, ChatMessage, ChatMode, DebugEvent, ImageAttachment, ToolEvent } from "../types";
+import type {
+    AgentEvent,
+    ChatMessage,
+    ChatMode,
+    DebugEvent,
+    ImageAttachment,
+    ToolEvent,
+    Workspace,
+} from "../types";
 import { useWebSocket } from "./useWebSocket";
 
 /**
@@ -33,12 +41,15 @@ import { useWebSocket } from "./useWebSocket";
  *   - 发消息用 REST（简单可靠，立即返回），收事件用 WebSocket（实时推送，长连接）
  *   - Agent 循环在服务端异步运行，不阻塞 REST 响应
  *   - 同一个 sessionId 同时只允许一个 Agent 循环运行（防重复提交）
+ *   - 对话必须在工作区下创建：切换/新建会话都由工作区驱动，
+ *     服务端据会话所属工作区决定默认读写目录与授权范围
  *
  * 本 Hook 职责：
  *   1. 管理消息列表（messages）、处理状态（isProcessing）、流式状态（isStreaming）
  *   2. 管理聊天模式（agent/direct）和 Debug 模式
- *   3. 通过 useWebSocket 接收服务端事件，按事件类型更新 UI 状态
- *   4. 通过 REST POST 发送用户消息
+ *   3. 管理当前会话所属的工作区，以及历史字符占用（进度条 + 手动压缩）
+ *   4. 通过 useWebSocket 接收服务端事件，按事件类型更新 UI 状态
+ *   5. 通过 REST POST 发送用户消息
  */
 
 export function useChat() {
@@ -48,6 +59,15 @@ export function useChat() {
     const [currentAssistantMsg, setCurrentAssistantMsg] = useState<ChatMessage | null>(null);
     const [mode, setMode] = useState<ChatMode>("agent");
     const [debug, setDebug] = useState(false);
+
+    /** 当前会话所属的工作区；为 null 表示还没在工作区下创建对话 */
+    const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
+    /** 当前会话历史占用的字符数，用于进度条 */
+    const [historyChars, setHistoryChars] = useState(0);
+    /** 自动压缩阈值，由服务端下发，避免前后端各写一份常量 */
+    const [compressionThreshold, setCompressionThreshold] = useState(1_000_000);
+    const [isCompressing, setIsCompressing] = useState(false);
+
     const currentToolEvents = useRef<Map<string, ToolEvent>>(new Map());
     const currentDebugEvents = useRef<DebugEvent[]>([]);
     const sessionIdRef = useRef<string | null>(null);
@@ -57,6 +77,16 @@ export function useChat() {
     const updateMode = useCallback((newMode: ChatMode) => {
         setMode(newMode);
         modeRef.current = newMode;
+    }, []);
+
+    /** 清空当前会话的 UI 状态（切换会话 / 新建会话时调用） */
+    const resetConversationUi = useCallback(() => {
+        setMessages([]);
+        setCurrentAssistantMsg(null);
+        setIsProcessing(false);
+        setIsStreaming(false);
+        currentToolEvents.current.clear();
+        currentDebugEvents.current = [];
     }, []);
 
     /**
@@ -70,22 +100,28 @@ export function useChat() {
                 sessionIdRef.current = event.sessionId;
                 break;
 
-            // 会话从磁盘恢复：加载历史消息到前端
+            // 会话已就绪：加载历史消息、所属工作区与字符占用
             case "session_restored": {
                 const restoredId = event.sessionId;
+                setCompressionThreshold(event.compressionThreshold);
+                setCurrentWorkspace(event.workspace);
+
                 fetch(`/api/session/${restoredId}`)
                     .then((res) => (res.ok ? res.json() : null))
                     .then((data) => {
-                        if (data && Array.isArray(data.messages) && data.messages.length > 0) {
-                            const restoredMessages: ChatMessage[] = data.messages.map(
-                                (m: { role: string; content: string }, i: number) => ({
-                                    id: `restored-${i}-${Date.now()}`,
-                                    role: m.role as "user" | "assistant",
-                                    content: typeof m.content === "string" ? m.content : "",
-                                    timestamp: Date.now() - (data.messages.length - i) * 1000,
-                                }),
-                            );
-                            setMessages(restoredMessages);
+                        if (!data || !Array.isArray(data.messages)) return;
+
+                        const restoredMessages: ChatMessage[] = data.messages.map(
+                            (m: { role: string; content: string }, i: number) => ({
+                                id: `restored-${i}-${Date.now()}`,
+                                role: m.role as "user" | "assistant",
+                                content: typeof m.content === "string" ? m.content : "",
+                                timestamp: Date.now() - (data.messages.length - i) * 1000,
+                            }),
+                        );
+                        setMessages(restoredMessages);
+                        setHistoryChars(data.charCount ?? event.charCount);
+                        if (restoredMessages.length > 0) {
                             antdMessage.success(`已恢复 ${restoredMessages.length} 条历史消息`);
                         }
                     })
@@ -94,6 +130,14 @@ export function useChat() {
                     });
                 break;
             }
+
+            // 历史字符占用变化：更新进度条（只接受当前会话的推送）
+            case "session_stats":
+                if (event.sessionId === sessionIdRef.current) {
+                    setHistoryChars(event.charCount);
+                    setCompressionThreshold(event.compressionThreshold);
+                }
+                break;
 
             // Agent 循环开始：标记正在处理，创建空的助手消息占位符，后续事件会逐步填充它
             case "run_start":
@@ -264,6 +308,11 @@ export function useChat() {
         async (content: string, images?: ImageAttachment[]) => {
             if (!content.trim() || isProcessing) return;
 
+            if (!sessionIdRef.current) {
+                antdMessage.warning("请先在工作区下新建一个对话");
+                return;
+            }
+
             let attachmentText = "";
             let imagePreviews: string[] | undefined;
 
@@ -317,78 +366,113 @@ export function useChat() {
             setMessages((prev) => [...prev, userMsg]);
 
             // 通过 REST POST 发送到后端
-            fetch("/api/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    message: fullMessage,
-                    sessionId: sessionIdRef.current,
-                    mode: modeRef.current,
-                }),
-            }).catch((err) => {
-                antdMessage.error(`发送失败: ${err.message}`);
+            try {
+                const res = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        message: fullMessage,
+                        sessionId: sessionIdRef.current,
+                        mode: modeRef.current,
+                    }),
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ error: "发送失败" }));
+                    throw new Error(err.error || `发送失败 (${res.status})`);
+                }
+            } catch (err) {
+                antdMessage.error(`发送失败: ${err instanceof Error ? err.message : "未知错误"}`);
                 setIsProcessing(false);
-            });
+            }
         },
         [isProcessing],
     );
 
+    /** 清空当前对话（保留会话与工作区归属，仅清屏） */
     const clearMessages = useCallback(() => {
-        setMessages([]);
-        setCurrentAssistantMsg(null);
-        currentToolEvents.current.clear();
-        currentDebugEvents.current = [];
+        resetConversationUi();
+        setHistoryChars(0);
         clearSession();
-    }, [clearSession]);
+    }, [clearSession, resetConversationUi]);
 
-    /** 切换到指定历史会话 */
+    /** 切换到指定历史会话，具体内容由服务端推送的 session_restored 填充 */
     const switchSession = useCallback(
-        async (targetSessionId: string) => {
-            try {
-                const res = await fetch(`/api/session/${targetSessionId}`);
-                if (!res.ok) {
-                    antdMessage.error("加载会话失败");
-                    return;
-                }
-                const data = (await res.json()) as {
-                    sessionId: string;
-                    messages: Array<{ role: string; content: string }>;
-                };
-
-                // 更新 localStorage 中的 sessionId，并重连 WebSocket
-                localStorage.setItem("yuan-claw-session-id", targetSessionId);
-                sessionIdRef.current = targetSessionId;
-
-                // 加载历史消息到 UI
-                const restoredMessages: ChatMessage[] = data.messages.map(
-                    (m, i) => ({
-                        id: `restored-${i}-${Date.now()}`,
-                        role: m.role as "user" | "assistant",
-                        content: typeof m.content === "string" ? m.content : "",
-                        timestamp: Date.now() - (data.messages.length - i) * 1000,
-                    }),
-                );
-                setMessages(restoredMessages);
-                setCurrentAssistantMsg(null);
-
-                // 重连 WebSocket 以关联到新的 session
-                reconnect();
-            } catch (err) {
-                antdMessage.error(`切换会话失败: ${err instanceof Error ? err.message : "未知错误"}`);
-            }
+        (targetSessionId: string) => {
+            resetConversationUi();
+            setHistoryChars(0);
+            reconnect(targetSessionId);
         },
-        [reconnect],
+        [reconnect, resetConversationUi],
     );
 
-    /** 新建对话（清除当前会话，获取新 sessionId） */
-    const newSession = useCallback(() => {
-        setMessages([]);
-        setCurrentAssistantMsg(null);
-        currentToolEvents.current.clear();
-        currentDebugEvents.current = [];
-        clearSession();
-        reconnect();
-    }, [clearSession, reconnect]);
+    /**
+     * 在指定工作区下新建对话。
+     *
+     * 服务端会立即落盘一条空会话记录（含 workspaceId），
+     * 之后重连 WebSocket 时就能解析出该对话所属的工作区。
+     */
+    const newSessionInWorkspace = useCallback(
+        async (workspaceId: string) => {
+            try {
+                const res = await fetch(`/api/workspace/${workspaceId}/session`, {
+                    method: "POST",
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.error || "新建对话失败");
+                }
+
+                resetConversationUi();
+                setHistoryChars(0);
+                setCurrentWorkspace(data.workspace as Workspace);
+                sessionIdRef.current = data.sessionId as string;
+                reconnect(data.sessionId as string);
+            } catch (err) {
+                antdMessage.error(`新建对话失败: ${err instanceof Error ? err.message : "未知错误"}`);
+            }
+        },
+        [reconnect, resetConversationUi],
+    );
+
+    /**
+     * 手动压缩当前会话的历史对话。
+     *
+     * 后端把较早的消息交给 LLM 压成结构化摘要、只保留最近若干条原文，
+     * 压缩后的结果会直接覆盖磁盘上的会话记录，UI 展示的对话内容不变。
+     */
+    const compressCurrentSession = useCallback(async () => {
+        const targetSessionId = sessionIdRef.current;
+        if (!targetSessionId) {
+            antdMessage.warning("当前没有可压缩的对话");
+            return;
+        }
+        if (isProcessing) {
+            antdMessage.warning("对话正在进行中，请结束后再压缩");
+            return;
+        }
+
+        setIsCompressing(true);
+        try {
+            const res = await fetch(`/api/session/${targetSessionId}/compress`, {
+                method: "POST",
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || "压缩失败");
+            }
+
+            setHistoryChars(data.charCountAfter as number);
+            setCompressionThreshold(data.compressionThreshold as number);
+            antdMessage.success(
+                `已压缩：${data.charCountBefore} → ${data.charCountAfter} 字符`,
+            );
+        } catch (err) {
+            antdMessage.error(`压缩失败: ${err instanceof Error ? err.message : "未知错误"}`);
+        } finally {
+            setIsCompressing(false);
+        }
+    }, [isProcessing]);
 
     return {
         messages,
@@ -401,10 +485,15 @@ export function useChat() {
         setMode: updateMode,
         debug,
         setDebug,
+        currentWorkspace,
+        historyChars,
+        compressionThreshold,
+        isCompressing,
+        compressCurrentSession,
         sendMessage,
         clearMessages,
         switchSession,
-        newSession,
+        newSessionInWorkspace,
         reconnect,
     };
 }

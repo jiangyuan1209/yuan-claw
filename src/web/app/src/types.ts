@@ -10,9 +10,27 @@
  */
 export type AgentEvent =
     /** WebSocket 连接建立时，服务端推送的第一条事件，携带分配给本次连接的 sessionId */
-    | { type: "session_init"; sessionId: string; restored?: boolean }
-    /** 会话从磁盘恢复后推送，前端据此加载历史消息 */
-    | { type: "session_restored"; sessionId: string; messageCount: number }
+    | { type: "session_init"; sessionId: string; workspaceId?: string | null; restored?: boolean }
+    /** 会话从磁盘恢复后推送，前端据此加载历史消息、所属工作区与字符占用 */
+    | {
+          type: "session_restored";
+          sessionId: string;
+          messageCount: number;
+          charCount: number;
+          compressionThreshold: number;
+          workspace: Workspace | null;
+      }
+    /**
+     * 会话历史字符数变化（每次消息落盘、或手动压缩完成后推送）。
+     * 前端据此更新进度条，让用户知道距离自动压缩阈值还有多远。
+     */
+    | {
+          type: "session_stats";
+          sessionId: string;
+          charCount: number;
+          messageCount: number;
+          compressionThreshold: number;
+      }
     /** Agent 循环开始处理用户输入时触发，input 为用户发送的原始消息 */
     | { type: "run_start"; input: string }
     /**
@@ -52,6 +70,36 @@ export type AgentEvent =
 
 /** 聊天模式：agent（工具调用循环）或 direct（直连大模型，流式输出） */
 export type ChatMode = "agent" | "direct";
+
+/**
+ * 工作区：一组目录 + 一个主目录。
+ *
+ * 对话必须在工作区下创建；工作区内的读写无需用户逐次授权，
+ * 用户未指定绝对路径时 Agent 以 primaryDir 为默认工作目录。
+ */
+export type Workspace = {
+    id: string;
+    name: string;
+    directories: string[];
+    primaryDir: string;
+    createdAt: string;
+};
+
+/** 侧边栏展示用的会话摘要（GET /api/sessions） */
+export type SessionMeta = {
+    sessionId: string;
+    updatedAt: string;
+    messageCount: number;
+    charCount: number;
+    preview: string;
+    workspaceId?: string;
+};
+
+/** 目录浏览接口（GET /api/fs/dirs）的一行 */
+export type DirEntry = {
+    name: string;
+    path: string;
+};
 
 /** 图片附件，用于 OCR 识别场景 */
 export type ImageAttachment = {
