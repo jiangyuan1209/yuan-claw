@@ -319,6 +319,11 @@ export const InputPanel: React.FC<InputPanelProps> = ({
                                 <div>
                                     <div>当前工作区：{workspace.name}</div>
                                     <div>主目录：{workspace.primaryDir}</div>
+                                    {workspace.directories
+                                        .filter((d) => d !== workspace.primaryDir)
+                                        .map((d) => (
+                                            <div key={d}>目录：{d}</div>
+                                        ))}
                                     <div>点击可新建工作区</div>
                                 </div>
                             ) : (

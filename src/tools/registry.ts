@@ -28,14 +28,20 @@ type CreateToolRegistryOptions = {
  *
  * 这些工具在构造时就把工作区根目录固化进了闭包，切换工作区主目录时必须重建；
  * 其余工具（web_search、MCP 工具等）与目录无关，可以在多个工作区之间复用。
+ *
+ * options.trusted：受信任上下文（如 Web 工作区，用户已授权目录内读写与命令执行），
+ * 传给 shell_exec 以跳过命令白名单，允许 curl 等命令直接执行（危险命令黑名单仍生效）。
  */
-export function createWorkspaceBoundTools(workspaceRoot: string): Tool[] {
+export function createWorkspaceBoundTools(
+    workspaceRoot: string,
+    options: { trusted?: boolean } = {},
+): Tool[] {
     return [
         createReadFileTool({ workspaceRoot }),
         createWriteFileTool({ workspaceRoot }),
         createListFilesTool({ workspaceRoot }),
         createGrepTextTool({ workspaceRoot }),
-        createShellExecTool({ workspaceRoot }),
+        createShellExecTool({ workspaceRoot, trusted: options.trusted }),
         createGitStatusTool({ workspaceRoot }),
         createGitDiffTool({ workspaceRoot }),
     ];

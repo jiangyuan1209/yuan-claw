@@ -101,7 +101,9 @@ async function main() {
         let cached = toolsByRoot.get(root);
         if (!cached) {
             cached = new Map(baseTools);
-            for (const tool of createWorkspaceBoundTools(root)) {
+            // 工作区已获用户授权（免确认），shell_exec 以 trusted 模式重建，
+            // 跳过命令白名单，允许 curl 等命令直接执行（危险命令黑名单仍生效）。
+            for (const tool of createWorkspaceBoundTools(root, { trusted: true })) {
                 cached.set(tool.name, tool);
             }
             toolsByRoot.set(root, cached);

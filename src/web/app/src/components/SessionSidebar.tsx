@@ -167,7 +167,18 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                     }}
                 >
                     <FolderOutlined style={{ color: token.colorPrimary, flexShrink: 0 }} />
-                    <Tooltip title={`主目录：${workspace.primaryDir}`}>
+                    <Tooltip
+                        title={
+                            <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                                <div>主目录：{workspace.primaryDir}</div>
+                                {workspace.directories
+                                    .filter((d) => d !== workspace.primaryDir)
+                                    .map((d) => (
+                                        <div key={d}>目录：{d}</div>
+                                    ))}
+                            </div>
+                        }
+                    >
                         <Text
                             ellipsis
                             style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600 }}

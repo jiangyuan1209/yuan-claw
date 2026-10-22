@@ -13,6 +13,11 @@ const ShellExecInputSchema = z.object({
 
 type CreateShellExecToolOptions = {
     workspaceRoot: string;
+    /**
+     * 受信任上下文（如工作区）：跳过命令白名单，允许 curl 等命令直接执行；
+     * 危险命令黑名单始终生效。缺省为 false（CLI 模式仍走白名单）。
+     */
+    trusted?: boolean;
 };
 
 export function createShellExecTool(
@@ -26,7 +31,7 @@ export function createShellExecTool(
         async execute(rawArgs: unknown) {
             try {
                 const args = ShellExecInputSchema.parse(rawArgs);
-                validateShellCommand(args.command);
+                validateShellCommand(args.command, { trusted: options.trusted });
 
                 const { stdout, stderr } = await execFileAsync("sh", ["-lc", args.command], {
                     cwd: options.workspaceRoot,

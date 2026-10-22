@@ -35,7 +35,19 @@ const DEFAULT_ALLOW_PREFIXES = [
     "which",
 ];
 
-export function validateShellCommand(command: string) {
+export type ShellPolicyOptions = {
+    /**
+     * 受信任上下文（如工作区）：用户已授权该目录下的读写与命令执行，
+     * 因此跳过命令白名单校验，直接放行 curl 等未列入白名单的命令。
+     * 无论是否受信任，危险命令黑名单（rm -rf /、sudo 等）始终强制执行。
+     */
+    trusted?: boolean;
+};
+
+export function validateShellCommand(
+    command: string,
+    options: ShellPolicyOptions = {},
+) {
     const trimmed = command.trim();
 
     if (!trimmed) {
@@ -46,6 +58,11 @@ export function validateShellCommand(command: string) {
         if (pattern.test(trimmed)) {
             throw new Error(`Shell command denied by policy: ${trimmed}`);
         }
+    }
+
+    // 工作区等受信任上下文已获用户授权，不再用白名单限制可执行的命令。
+    if (options.trusted) {
+        return;
     }
 
     const firstToken = trimmed.split(/\s+/)[0];
