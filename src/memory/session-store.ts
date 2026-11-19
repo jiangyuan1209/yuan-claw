@@ -12,6 +12,26 @@ type SessionStoreOptions = {
 /** 旧版本的会话目录（相对启动目录），首次运行时迁移到绝对路径下 */
 const LEGACY_DIR_NAME = ".sessions";
 
+/** sessionId 的最大长度：UUID 是 36，留足自定义 id 的空间但不接受超长垃圾 */
+const MAX_SESSION_ID_LENGTH = 128;
+
+/**
+ * sessionId 会被直接拼进文件路径（`<historyDir>/<id>.json`）。Web 端的
+ * sessionId 来自 URL 查询参数与路由参数，属于外部输入；若不做校验，
+ * `../../x` 之类的值就能把读写删操作引出历史目录。
+ *
+ * 只接受单段文件名：首字符是字母或数字，其余为字母、数字、`.`、`_`、`-`。
+ * 这样既排除了路径分隔符与 NUL，也排除了 `.` / `..` 这类特殊目录名。
+ */
+export function isValidSessionId(sessionId: unknown): sessionId is string {
+    return (
+        typeof sessionId === "string" &&
+        sessionId.length > 0 &&
+        sessionId.length <= MAX_SESSION_ID_LENGTH &&
+        /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(sessionId)
+    );
+}
+
 export class SessionStore {
     private baseDir: string;
 
@@ -57,10 +77,16 @@ export class SessionStore {
     }
 
     private getFilePath(sessionId: string) {
+        if (!isValidSessionId(sessionId)) {
+            throw new Error(`Invalid session id: ${sessionId}`);
+        }
         return path.join(this.baseDir, `${sessionId}.json`);
     }
 
     async load(sessionId: string): Promise<SessionData | null> {
+        // 非法 id 一律当作不存在，避免把外部输入的错误细节透给调用方
+        if (!isValidSessionId(sessionId)) return null;
+
         try {
             const filePath = this.getFilePath(sessionId);
             const text = await fs.readFile(filePath, "utf8");
@@ -103,6 +129,10 @@ export class SessionStore {
         messages: ChatMessage[],
         workspaceId?: string,
     ): Promise<void> {
+        if (!isValidSessionId(sessionId)) {
+            throw new Error(`Invalid session id: ${sessionId}`);
+        }
+
         await fs.mkdir(this.baseDir, { recursive: true });
 
         const persistedMessages = messages.filter((m) => m.role !== "system");
@@ -183,6 +213,7 @@ export class SessionStore {
 
     /** 删除指定 session */
     async delete(sessionId: string): Promise<void> {
+        if (!isValidSessionId(sessionId)) return;
         try {
             await fs.unlink(this.getFilePath(sessionId));
         } catch {

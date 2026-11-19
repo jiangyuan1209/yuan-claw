@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { createToolRegistry, createWorkspaceBoundTools } from "../tools/registry.js";
 import { registerMcpTools } from "../tools/mcp/mcp-client.js";
-import { SessionStore } from "../memory/session-store.js";
+import { SessionStore, isValidSessionId } from "../memory/session-store.js";
 import { WorkspaceStore } from "../memory/workspace-store.js";
 import { countMessagesChars } from "../memory/message-chars.js";
 import { createWebEventBusBroadcast } from "../events/web-event-bus.js";
@@ -25,6 +25,7 @@ import { AudioSTTBridge } from "./audio-stt-bridge.js";
 import { ensureUserConfigInitialized } from "../config/init-user-config.js";
 import { loadAppConfig } from "../config/load-config.js";
 import { resolveWorkspaceRoot } from "../security/path-guards.js";
+import { checkRequestBoundary, resolveBindHost } from "../security/web-guard.js";
 import type { ChatMessage, Workspace } from "../memory/types.js";
 import type { Tool } from "../tools/types.js";
 import type { AgentEvent } from "../events/event-bus.js";
@@ -76,6 +77,38 @@ async function main() {
     const config = await loadAppConfig();
 
     const app = express();
+
+    /**
+     * 访问边界（见 security/web-guard.ts）。
+     *
+     * 默认只监听 127.0.0.1；Host 校验挡住 DNS rebinding，Origin /
+     * Sec-Fetch-Site 校验挡住任意网页对本地 API 的跨站调用。校验放在
+     * express.json 之前，避免为已拒绝的请求解析 10MB 请求体。
+     */
+    const { host: bindHost, exposed } = resolveBindHost(process.env.YUAN_CLAW_WEB_HOST);
+    const guardRequest = (req: import("express").Request): ReturnType<typeof checkRequestBoundary> =>
+        checkRequestBoundary(
+            {
+                host: req.headers.host,
+                origin: req.headers.origin,
+                secFetchSite:
+                    typeof req.headers["sec-fetch-site"] === "string"
+                        ? req.headers["sec-fetch-site"]
+                        : undefined,
+            },
+            { bindHost },
+        );
+
+    app.use((req, res, next) => {
+        const verdict = guardRequest(req);
+        if (!verdict.allowed) {
+            console.warn(`[web] blocked ${req.method} ${req.url}: ${verdict.reason}`);
+            res.status(403).json({ error: `Forbidden: ${verdict.reason}` });
+            return;
+        }
+        next();
+    });
+
     app.use(express.json({ limit: "10mb" }));
 
     // 未关联工作区时工具的兜底根目录（当前启动目录）
@@ -142,11 +175,19 @@ async function main() {
     const runningSessions = new Set<string>();
 
     // WebSocket server for real-time events
-    const server = app.listen(process.env.PORT ?? DEFAULT_PORT, () => {
+    const server = app.listen(Number(process.env.PORT ?? DEFAULT_PORT), bindHost, () => {
         const port = (server.address() as import("net").AddressInfo).port;
-        console.log(`Yuan Claw Web server running at http://localhost:${port}`);
-        console.log(`Chat WebSocket:  ws://localhost:${port}/ws`);
-        console.log(`Audio WebSocket: ws://localhost:${port}/ws/audio`);
+        const displayHost = bindHost.includes(":") ? `[${bindHost}]` : bindHost;
+        console.log(`Yuan Claw Web server running at http://${displayHost}:${port}`);
+        console.log(`Chat WebSocket:  ws://${displayHost}:${port}/ws`);
+        console.log(`Audio WebSocket: ws://${displayHost}:${port}/ws/audio`);
+        if (exposed) {
+            console.warn(
+                `[web] WARNING: listening on ${bindHost} (not loopback). ` +
+                    "The web UI has no authentication and can drive shell_exec; " +
+                    "only expose it on a network you fully trust.",
+            );
+        }
     });
 
     // 使用 noServer 模式，手动按路径把 HTTP upgrade 请求分发到对应的 WSS：
@@ -158,6 +199,26 @@ async function main() {
     const audioWss = new WebSocketServer({ noServer: true });
 
     server.on("upgrade", (request, socket, head) => {
+        // WebSocket 握手同样要过访问边界：浏览器会给 ws 请求带 Origin，
+        // 不校验的话任意网页都能连上本地 Agent 的事件通道。
+        const verdict = checkRequestBoundary(
+            {
+                host: request.headers.host,
+                origin: request.headers.origin,
+                secFetchSite:
+                    typeof request.headers["sec-fetch-site"] === "string"
+                        ? request.headers["sec-fetch-site"]
+                        : undefined,
+            },
+            { bindHost },
+        );
+        if (!verdict.allowed) {
+            console.warn(`[web] blocked WebSocket upgrade ${request.url}: ${verdict.reason}`);
+            socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+            socket.destroy();
+            return;
+        }
+
         const pathname = new URL(request.url ?? "/", `http://${request.headers.host}`).pathname;
 
         if (pathname === "/ws/audio") {
@@ -182,6 +243,12 @@ async function main() {
         let restoredWorkspace: Workspace | null = null;
 
         if (requestedSessionId) {
+            if (!isValidSessionId(requestedSessionId)) {
+                // sessionId 会被拼进历史文件路径，非法值直接拒绝握手
+                sendJson(ws, { type: "error", error: "Invalid sessionId" });
+                ws.close(1008, "Invalid sessionId");
+                return;
+            }
             sessionId = requestedSessionId;
             // 尝试从内存中恢复
             const existingSession = sessions.get(sessionId);
@@ -425,6 +492,11 @@ async function main() {
     app.get("/api/session/:id", async (req, res) => {
         const { id } = req.params;
 
+        if (!isValidSessionId(id)) {
+            res.status(400).json({ error: "Invalid session id" });
+            return;
+        }
+
         // 先从内存中查找
         const memSession = sessions.get(id);
         if (memSession && memSession.messages.length > 0) {
@@ -477,6 +549,12 @@ async function main() {
     // REST API: 删除指定会话
     app.delete("/api/session/:id", async (req, res) => {
         const { id } = req.params;
+
+        if (!isValidSessionId(id)) {
+            res.status(400).json({ error: "Invalid session id" });
+            return;
+        }
+
         try {
             await sessionStore.delete(id);
             sessions.delete(id);
@@ -491,6 +569,11 @@ async function main() {
     // REST API: 手动压缩指定会话的历史对话
     app.post("/api/session/:id/compress", async (req, res) => {
         const { id } = req.params;
+
+        if (!isValidSessionId(id)) {
+            res.status(400).json({ error: "Invalid session id" });
+            return;
+        }
 
         if (runningSessions.has(id)) {
             res.status(429).json({ error: "对话正在进行中，请结束后再压缩" });
